@@ -11,10 +11,12 @@ function playerStatus(player) {
   return 'normal'
 }
 
-function mapPlayer(player, team, side) {
+function mapPlayer(player, team, side, tactical) {
   const [x = 0, y = 0] = Array.isArray(player.currentPOS) ? player.currentPOS : []
+  const id = String(player.playerID ?? `${team.teamID ?? team.name}-${player.name}`)
+  const movementIntent = tactical?.movementIntents?.find(intent => intent.playerId === id)
   return {
-    id: String(player.playerID ?? `${team.teamID ?? team.name}-${player.name}`),
+    id,
     teamId: String(team.teamID ?? team.name),
     teamName: team.name,
     side,
@@ -25,6 +27,7 @@ function mapPlayer(player, team, side) {
     y: toNumber(y),
     hasBall: player.hasBall === true,
     stamina: toNumber(player.fitness, 100),
+    movementIntent,
     status: playerStatus(player)
   }
 }
@@ -67,8 +70,8 @@ function toMatchFrame(matchDetails, tactical) {
   const clock = matchDetails.matchClock ?? { tick: 0, minute: 0, second: 0, totalSeconds: 0 }
   const ballPosition = Array.isArray(matchDetails.ball?.position) ? matchDetails.ball.position : [0, 0, 0]
   const players = [
-    ...(matchDetails.kickOffTeam?.players ?? []).map(player => mapPlayer(player, matchDetails.kickOffTeam, 'kickOffTeam')),
-    ...(matchDetails.secondTeam?.players ?? []).map(player => mapPlayer(player, matchDetails.secondTeam, 'secondTeam'))
+    ...(matchDetails.kickOffTeam?.players ?? []).map(player => mapPlayer(player, matchDetails.kickOffTeam, 'kickOffTeam', tactical)),
+    ...(matchDetails.secondTeam?.players ?? []).map(player => mapPlayer(player, matchDetails.secondTeam, 'secondTeam', tactical))
   ]
 
   return {

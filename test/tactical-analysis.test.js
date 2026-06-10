@@ -46,4 +46,5 @@ test('analyzeTactics includes full phase 2 tactical fields', () => {
   assert.ok(Array.isArray(result.intercepts))
   assert.ok(result.pressing)
   assert.ok(Array.isArray(result.actionRecommendations))
+  assert.ok(Array.isArray(result.movementIntents))
 })

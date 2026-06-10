@@ -8,6 +8,7 @@ const { calculateFormationTargets } = require('./formation')
 const { estimateInterceptions } = require('./intercept')
 const { assignPressing } = require('./pressing')
 const { recommendActions } = require('./actionScoring')
+const { assignMovementIntents } = require('./movementIntent')
 
 function analyzeTactics(matchDetails) {
   const base = {
@@ -20,6 +21,7 @@ function analyzeTactics(matchDetails) {
   base.formationTargets = calculateFormationTargets(matchDetails, base)
   base.intercepts = estimateInterceptions(matchDetails)
   base.pressing = assignPressing(matchDetails, base)
+  base.movementIntents = assignMovementIntents(matchDetails, base)
   base.actionRecommendations = recommendActions(matchDetails, base)
   return base
 }
@@ -33,5 +35,6 @@ module.exports = {
   calculateFormationTargets,
   estimateInterceptions,
   assignPressing,
-  recommendActions
+  recommendActions,
+  assignMovementIntents
 }
