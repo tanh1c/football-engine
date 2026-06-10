@@ -11,12 +11,13 @@ function readJson(relativePath) {
 async function main() {
   const ticks = Number(process.argv[2] ?? 30)
   const seed = process.argv[3] ?? 'demo-seed'
+  const secondsPerTick = Number(process.argv[4] ?? 5)
   const result = await simulateMatch({
     homeTeam: readJson('vendor/footballSimulationEngine/init_config/team1.json'),
     awayTeam: readJson('vendor/footballSimulationEngine/init_config/team2.json'),
     pitch: readJson('vendor/footballSimulationEngine/init_config/pitch.json'),
     seed,
-    secondsPerTick: 5
+    secondsPerTick
   }, { ticks })
 
   const outputDir = path.join(__dirname, '..', 'tmp')
@@ -25,6 +26,7 @@ async function main() {
   fs.writeFileSync(outputPath, JSON.stringify({
     seed,
     ticks,
+    secondsPerTick,
     frames: result.frames,
     events: result.events,
     finalStats: result.finalStats

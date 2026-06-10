@@ -76,6 +76,11 @@ function toMatchFrame(matchDetails, tactical) {
     minute: clock.minute,
     second: clock.second,
     half: matchDetails.half,
+    continuity: {
+      secondsPerTick: toNumber(clock.secondsPerTick, 1),
+      previousTick: Math.max(0, toNumber(clock.tick) - 1),
+      nextTick: toNumber(clock.tick) + 1
+    },
     pitch: {
       width: toNumber(matchDetails.pitchSize?.[0] ?? matchDetails.pitchWidth),
       height: toNumber(matchDetails.pitchSize?.[1] ?? matchDetails.pitchHeight)

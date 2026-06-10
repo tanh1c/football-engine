@@ -31,6 +31,15 @@ test('simulateMatch emits render-ready frames and events', async () => {
   assert.ok(Array.isArray(result.events))
 })
 
+test('simulateMatch supports one-second smooth tick output', async () => {
+  const result = await simulateMatch({ ...demoInput('smooth-one-second'), secondsPerTick: 1 }, { ticks: 3 })
+
+  assert.equal(result.frames.length, 4)
+  assert.equal(result.frames[3].tick, 3)
+  assert.equal(result.frames[3].second, 3)
+  assert.equal(result.frames[3].continuity.secondsPerTick, 1)
+})
+
 test('simulateMatch is deterministic for the same seed', async () => {
   const first = await simulateMatch(demoInput('repeatable'), { ticks: 5 })
   const second = await simulateMatch(demoInput('repeatable'), { ticks: 5 })
