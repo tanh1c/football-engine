@@ -1,0 +1,95 @@
+'use strict'
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function playerStatus(player) {
+  if (player.redCard === true || player.sentOff === true) return 'sent_off'
+  if (player.injured === true) return 'injured'
+  return 'normal'
+}
+
+function mapPlayer(player, team, side) {
+  const [x = 0, y = 0] = Array.isArray(player.currentPOS) ? player.currentPOS : []
+  return {
+    id: String(player.playerID ?? `${team.teamID ?? team.name}-${player.name}`),
+    teamId: String(team.teamID ?? team.name),
+    teamName: team.name,
+    side,
+    name: player.name,
+    shirtNo: player.shirtNo ?? player.number,
+    role: player.position,
+    x: toNumber(x),
+    y: toNumber(y),
+    hasBall: player.hasBall === true,
+    stamina: toNumber(player.fitness, 100),
+    status: playerStatus(player)
+  }
+}
+
+function classifyLogMessage(message) {
+  const text = String(message)
+  const lower = text.toLowerCase()
+
+  if (lower.includes('goal')) return 'goal'
+  if (lower.includes('shot') || lower.includes('shoot')) return 'shot'
+  if (lower.includes('pass')) return 'pass'
+  if (lower.includes('tackle')) return 'tackle'
+  if (lower.includes('corner')) return 'set_piece'
+  if (lower.includes('throw')) return 'set_piece'
+  if (lower.includes('free kick') || lower.includes('freekick')) return 'set_piece'
+  if (lower.includes('penalty')) return 'set_piece'
+  if (lower.includes('offside')) return 'offside'
+  if (lower.includes('foul')) return 'foul'
+  return 'commentary'
+}
+
+function mapEvents(matchDetails, clock) {
+  return (matchDetails.iterationLog ?? []).map((message, index) => ({
+    id: `${clock.tick}:${index}`,
+    tick: clock.tick,
+    minute: clock.minute,
+    second: clock.second,
+    type: classifyLogMessage(message),
+    message: String(message)
+  }))
+}
+
+function toMatchFrame(matchDetails) {
+  const clock = matchDetails.matchClock ?? { tick: 0, minute: 0, second: 0, totalSeconds: 0 }
+  const ballPosition = Array.isArray(matchDetails.ball?.position) ? matchDetails.ball.position : [0, 0, 0]
+  const players = [
+    ...(matchDetails.kickOffTeam?.players ?? []).map(player => mapPlayer(player, matchDetails.kickOffTeam, 'kickOffTeam')),
+    ...(matchDetails.secondTeam?.players ?? []).map(player => mapPlayer(player, matchDetails.secondTeam, 'secondTeam'))
+  ]
+
+  return {
+    tick: clock.tick,
+    minute: clock.minute,
+    second: clock.second,
+    half: matchDetails.half,
+    pitch: {
+      width: toNumber(matchDetails.pitchSize?.[0] ?? matchDetails.pitchWidth),
+      height: toNumber(matchDetails.pitchSize?.[1] ?? matchDetails.pitchHeight)
+    },
+    score: {
+      [String(matchDetails.kickOffTeam?.teamID ?? matchDetails.kickOffTeam?.name ?? 'home')]: toNumber(matchDetails.kickOffTeam?.statistics?.goals),
+      [String(matchDetails.secondTeam?.teamID ?? matchDetails.secondTeam?.name ?? 'away')]: toNumber(matchDetails.secondTeam?.statistics?.goals)
+    },
+    ball: {
+      x: toNumber(ballPosition[0]),
+      y: toNumber(ballPosition[1]),
+      z: toNumber(ballPosition[2]),
+      ownerPlayerId: matchDetails.ball?.Player ? String(matchDetails.ball.Player) : undefined,
+      ownerTeamId: matchDetails.ball?.withTeam ? String(matchDetails.ball.withTeam) : undefined
+    },
+    players,
+    events: mapEvents(matchDetails, clock)
+  }
+}
+
+module.exports = {
+  toMatchFrame
+}

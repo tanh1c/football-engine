@@ -1,0 +1,19 @@
+{
+  "name": "football-engine",
+  "version": "0.1.0",
+  "description": "FM-like deterministic 2D football match simulation prototype",
+  "main": "src/match-engine/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "simulate": "node scripts/simulate-demo.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "football",
+    "soccer",
+    "match-engine",
+    "simulation",
+    "football-manager"
+  ],
+  "license": "MIT"
+}
