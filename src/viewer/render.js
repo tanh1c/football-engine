@@ -1,4 +1,4 @@
-import { framePairAtPlayhead, interpolateFrame } from './interpolate.js'
+import { framePairAtPlayhead, interpolateFrame, playbackSpeedLabel, playheadDelta } from './interpolate.js'
 
 export function createMatchViewer(canvas, options = {}) {
   const context = canvas.getContext('2d')
@@ -125,7 +125,7 @@ export function createMatchViewer(canvas, options = {}) {
     context.textAlign = 'left'
     const displaySecond = Math.floor(frame.second)
     context.fillText(`Tick ${Math.floor(frame.tick)} • ${String(frame.minute).padStart(2, '0')}:${String(displaySecond).padStart(2, '0')}`, 28, 42)
-    context.fillText(`Events: ${frame.events.length}`, 28, 66)
+    context.fillText(`Events: ${frame.events.length} • Speed ${playbackSpeedLabel(state.speed)}`, 28, 66)
   }
 
   function drawCommentary(frame) {
@@ -164,7 +164,7 @@ export function createMatchViewer(canvas, options = {}) {
     if (!state.lastTime) state.lastTime = timestamp
     const elapsedSeconds = (timestamp - state.lastTime) / 1000
     state.lastTime = timestamp
-    state.playhead += elapsedSeconds * state.speed
+    state.playhead += playheadDelta(state.speed, elapsedSeconds)
     if (state.playhead >= Math.max(0, state.frames.length - 1)) state.playhead = 0
     draw()
     state.rafId = requestAnimationFrame(loop)
