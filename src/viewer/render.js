@@ -1,17 +1,22 @@
+import { framePairAtPlayhead, interpolateFrame } from './interpolate.js'
+
 export function createMatchViewer(canvas, options = {}) {
   const context = canvas.getContext('2d')
   const state = {
     frames: [],
     frameIndex: 0,
+    playhead: 0,
     playing: false,
     lastTime: 0,
-    fps: options.fps ?? 12,
+    speed: options.speed ?? 1,
+    renderFps: options.renderFps ?? 60,
     rafId: undefined
   }
 
   function setFrames(frames) {
     state.frames = frames ?? []
     state.frameIndex = 0
+    state.playhead = 0
     draw()
   }
 
@@ -118,7 +123,8 @@ export function createMatchViewer(canvas, options = {}) {
     context.fillStyle = '#ffffff'
     context.font = '14px system-ui, sans-serif'
     context.textAlign = 'left'
-    context.fillText(`Tick ${frame.tick} • ${String(frame.minute).padStart(2, '0')}:${String(frame.second).padStart(2, '0')}`, 28, 42)
+    const displaySecond = Math.floor(frame.second)
+    context.fillText(`Tick ${Math.floor(frame.tick)} • ${String(frame.minute).padStart(2, '0')}:${String(displaySecond).padStart(2, '0')}`, 28, 42)
     context.fillText(`Events: ${frame.events.length}`, 28, 66)
   }
 
@@ -136,10 +142,16 @@ export function createMatchViewer(canvas, options = {}) {
     })
   }
 
+  function renderFrame() {
+    const pair = framePairAtPlayhead(state.frames, state.playhead)
+    state.frameIndex = pair.baseIndex
+    return interpolateFrame(pair.current, pair.next, pair.ratio)
+  }
+
   function draw() {
     context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight)
     drawPitch()
-    const frame = state.frames[state.frameIndex]
+    const frame = renderFrame()
     if (!frame) return
     drawPlayers(frame)
     drawBall(frame)
@@ -149,11 +161,12 @@ export function createMatchViewer(canvas, options = {}) {
 
   function loop(timestamp) {
     if (!state.playing) return
-    if (timestamp - state.lastTime >= 1000 / state.fps) {
-      state.frameIndex = (state.frameIndex + 1) % Math.max(1, state.frames.length)
-      state.lastTime = timestamp
-      draw()
-    }
+    if (!state.lastTime) state.lastTime = timestamp
+    const elapsedSeconds = (timestamp - state.lastTime) / 1000
+    state.lastTime = timestamp
+    state.playhead += elapsedSeconds * state.speed
+    if (state.playhead >= Math.max(0, state.frames.length - 1)) state.playhead = 0
+    draw()
     state.rafId = requestAnimationFrame(loop)
   }
 
@@ -170,17 +183,23 @@ export function createMatchViewer(canvas, options = {}) {
   }
 
   function next() {
-    state.frameIndex = Math.min(state.frames.length - 1, state.frameIndex + 1)
+    state.playhead = Math.min(state.frames.length - 1, Math.floor(state.playhead) + 1)
+    state.frameIndex = Math.floor(state.playhead)
     draw()
   }
 
   function previous() {
-    state.frameIndex = Math.max(0, state.frameIndex - 1)
+    state.playhead = Math.max(0, Math.floor(state.playhead) - 1)
+    state.frameIndex = Math.floor(state.playhead)
     draw()
+  }
+
+  function setSpeed(speed) {
+    state.speed = Math.max(0.25, Math.min(8, Number(speed) || 1))
   }
 
   window.addEventListener('resize', resize)
   resize()
 
-  return { draw, next, pause, play, previous, resize, setFrames, state }
+  return { draw, next, pause, play, previous, resize, setFrames, setSpeed, state }
 }
