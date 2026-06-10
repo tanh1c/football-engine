@@ -46,18 +46,24 @@ function classifyLogMessage(message) {
   return 'commentary'
 }
 
-function mapEvents(matchDetails, clock) {
-  return (matchDetails.iterationLog ?? []).map((message, index) => ({
-    id: `${clock.tick}:${index}`,
-    tick: clock.tick,
-    minute: clock.minute,
-    second: clock.second,
-    type: classifyLogMessage(message),
-    message: String(message)
-  }))
+function mapEvents(matchDetails, clock, tactical) {
+  return (matchDetails.iterationLog ?? []).map((message, index) => {
+    const type = classifyLogMessage(message)
+    return {
+      id: `${clock.tick}:${index}`,
+      tick: clock.tick,
+      minute: clock.minute,
+      second: clock.second,
+      type,
+      message: String(message),
+      phase: tactical?.phase,
+      pressure: tactical?.pressure?.score,
+      xg: type === 'shot' || type === 'goal' ? tactical?.shotQuality?.xg : undefined
+    }
+  })
 }
 
-function toMatchFrame(matchDetails) {
+function toMatchFrame(matchDetails, tactical) {
   const clock = matchDetails.matchClock ?? { tick: 0, minute: 0, second: 0, totalSeconds: 0 }
   const ballPosition = Array.isArray(matchDetails.ball?.position) ? matchDetails.ball.position : [0, 0, 0]
   const players = [
@@ -86,7 +92,8 @@ function toMatchFrame(matchDetails) {
       ownerTeamId: matchDetails.ball?.withTeam ? String(matchDetails.ball.withTeam) : undefined
     },
     players,
-    events: mapEvents(matchDetails, clock)
+    events: mapEvents(matchDetails, clock, tactical),
+    tactical
   }
 }
 

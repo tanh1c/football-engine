@@ -1,9 +1,24 @@
 const common = require('../lib/common')
 const setPositions = require('../lib/setPositions')
 
+function recommendationMultiplier(actionName, possibleActions) {
+  const recommendation = possibleActions.find(action => action.recommendationAction === actionName)
+  if (!recommendation) return 1
+  return 1 + Math.max(0, Math.min(1, recommendation.recommendationScore ?? 0))
+}
+
 function selectAction(possibleActions) {
+  const adjustedActions = possibleActions.map(action => ({ ...action }))
+  for (const action of adjustedActions) {
+    action.points = Math.round(action.points * recommendationMultiplier(action.name, adjustedActions))
+    if (action.name === 'pass') action.points = Math.round(action.points * 1.1)
+    if (action.name === 'throughBall') action.points = Math.round(action.points * 1.05)
+    if (action.name === 'shoot' && action.points > 0) action.points = Math.round(action.points * 1.05)
+    if (action.name === 'boot') action.points = Math.round(action.points * 0.9)
+  }
+
   let goodActions = []
-  for (const thisAction of possibleActions) {
+  for (const thisAction of adjustedActions) {
     let tempArray = Array(thisAction.points).fill(thisAction.name)
     goodActions = goodActions.concat(tempArray)
   }
@@ -284,6 +299,13 @@ function populatePossibleActions(possibleActions, player, matchDetails, a, b, c,
   possibleActions[8].points = i
   possibleActions[9].points = j
   possibleActions[10].points = k
+  const recommendation = matchDetails.tactical?.actionRecommendations?.find(item => item.playerId === String(player.playerID))
+  if (recommendation) {
+    possibleActions.forEach(action => {
+      action.recommendationAction = recommendation.action
+      action.recommendationScore = recommendation.score
+    })
+  }
   possibleActions = adjustForBallHeight(possibleActions, player, matchDetails)
   possibleActions = normaliseActionObjects(possibleActions)
   return possibleActions

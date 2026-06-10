@@ -3,6 +3,7 @@
 const { initiateGame, playIteration, startSecondHalf } = require('../../vendor/footballSimulationEngine/engine')
 const { hashSeed, withSeededRandom } = require('./rng')
 const { toMatchFrame } = require('./frameAdapter')
+const { analyzeTactics } = require('./tactical')
 
 const DEFAULT_SECONDS_PER_TICK = 1
 
@@ -52,13 +53,15 @@ async function initMatch(input) {
   matchDetails.matchClock = normalizeClock({ tick: 0, totalSeconds: 0 }, secondsPerTick)
   matchDetails.seed = String(seed)
   matchDetails.rngState = rngState
-  matchDetails.frameHistory = [toMatchFrame(matchDetails)]
+  const tactical = analyzeTactics(matchDetails)
+  matchDetails.frameHistory = [toMatchFrame(matchDetails, tactical)]
 
   return matchDetails
 }
 
 async function stepMatch(matchDetails, options = {}) {
   const secondsPerTick = options.secondsPerTick ?? matchDetails.matchClock?.secondsPerTick ?? DEFAULT_SECONDS_PER_TICK
+  matchDetails.tactical = analyzeTactics(matchDetails)
   const { value: state, rngState } = await withSeededRandom(matchDetails.rngState ?? matchDetails.seed, () => (
     playIteration(matchDetails)
   ))
@@ -66,7 +69,8 @@ async function stepMatch(matchDetails, options = {}) {
   state.rngState = rngState
   state.matchClock = advanceClock(state.matchClock, secondsPerTick)
 
-  const frame = toMatchFrame(state)
+  const tactical = analyzeTactics(state)
+  const frame = toMatchFrame(state, tactical)
   state.frameHistory = [...(state.frameHistory ?? []), frame]
 
   return {
@@ -79,7 +83,8 @@ async function stepMatch(matchDetails, options = {}) {
 async function startSecondHalfMatch(matchDetails) {
   const state = await startSecondHalf(matchDetails)
   state.matchClock = normalizeClock(state.matchClock, state.matchClock?.secondsPerTick ?? DEFAULT_SECONDS_PER_TICK)
-  const frame = toMatchFrame(state)
+  const tactical = analyzeTactics(state)
+  const frame = toMatchFrame(state, tactical)
   state.frameHistory = [...(state.frameHistory ?? []), frame]
   return { state, frame, events: frame.events }
 }

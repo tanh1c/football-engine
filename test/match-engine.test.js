@@ -38,3 +38,39 @@ test('simulateMatch is deterministic for the same seed', async () => {
   assert.deepEqual(first.frames, second.frames)
   assert.deepEqual(first.finalStats, second.finalStats)
 })
+
+test('simulateMatch includes tactical metadata on emitted frames', async () => {
+  const result = await simulateMatch(demoInput('tactical-frame'), { ticks: 2 })
+  const frame = result.frames[2]
+
+  assert.ok(frame.tactical)
+  assert.equal(typeof frame.tactical.phase, 'string')
+  assert.equal(typeof frame.tactical.pressure.score, 'number')
+  assert.ok(Array.isArray(frame.tactical.passOptions))
+})
+
+test('tactical action scoring keeps simulation deterministic', async () => {
+  const first = await simulateMatch(demoInput('tactical-action-hook'), { ticks: 20 })
+  const second = await simulateMatch(demoInput('tactical-action-hook'), { ticks: 20 })
+
+  assert.deepEqual(first.frames, second.frames)
+  assert.deepEqual(first.events, second.events)
+})
+
+test('simulateMatch includes full phase 2 tactical metadata on frames', async () => {
+  const result = await simulateMatch(demoInput('full-phase-2-frame'), { ticks: 2 })
+  const tactical = result.frames[2].tactical
+
+  assert.ok(Array.isArray(tactical.formationTargets))
+  assert.ok(Array.isArray(tactical.intercepts))
+  assert.ok(tactical.pressing)
+  assert.ok(Array.isArray(tactical.actionRecommendations))
+})
+
+test('full phase 2 action recommendations keep simulation deterministic', async () => {
+  const first = await simulateMatch(demoInput('full-phase-2-action-hook'), { ticks: 30 })
+  const second = await simulateMatch(demoInput('full-phase-2-action-hook'), { ticks: 30 })
+
+  assert.deepEqual(first.frames, second.frames)
+  assert.deepEqual(first.events, second.events)
+})
