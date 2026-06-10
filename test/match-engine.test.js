@@ -38,6 +38,8 @@ test('simulateMatch supports one-second smooth tick output', async () => {
   assert.equal(result.frames[3].tick, 3)
   assert.equal(result.frames[3].second, 3)
   assert.equal(result.frames[3].continuity.secondsPerTick, 1)
+  assert.equal(result.frames[0].continuity.nextTick, 1)
+  assert.equal(result.frames[0].ball.trajectory.to.x, result.frames[1].ball.x)
 })
 
 test('simulateMatch is deterministic for the same seed', async () => {

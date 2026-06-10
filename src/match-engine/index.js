@@ -4,6 +4,7 @@ const { initiateGame, playIteration, startSecondHalf } = require('../../vendor/f
 const { hashSeed, withSeededRandom } = require('./rng')
 const { toMatchFrame } = require('./frameAdapter')
 const { analyzeTactics } = require('./tactical')
+const { addFrameContinuity } = require('./continuity')
 
 const DEFAULT_SECONDS_PER_TICK = 1
 
@@ -102,9 +103,11 @@ async function simulateMatch(input, options = {}) {
     events.push(...result.events)
   }
 
+  const continuousFrames = addFrameContinuity(frames)
+
   return {
     state,
-    frames,
+    frames: continuousFrames,
     events,
     finalStats: {
       kickOffTeam: state.kickOffTeam?.statistics,
