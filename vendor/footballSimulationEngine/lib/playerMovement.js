@@ -189,15 +189,10 @@ function checkProvidedAction(matchDetails, thisPlayer, action) {
   if (providedAction === `none`) return action
   if (allActions.includes(providedAction)) {
     if (thisPlayer.playerID !== matchDetails.ball.Player) {
-      if (ballActions.includes(providedAction)) {
-        const notice = `${thisPlayer.name} doesnt have the ball so cannot ${providedAction} -action: run`
-        console.error(notice)
-        return `run`
-      } return providedAction
+      if (ballActions.includes(providedAction)) return `run`
+      return providedAction
     } else if (providedAction === `tackle` || providedAction === `slide` || providedAction === `intercept`) {
       action = ballActions[common.getRandomNumber(0, 5)]
-      const notice = `${thisPlayer.name} has the ball so cannot ${providedAction} -action: ${action}`
-      console.error(notice)
       return action
     } return providedAction
   } else if (thisPlayer.action !== `none`) throw new Error(`Invalid player action for ${thisPlayer.name}`)
