@@ -4,6 +4,7 @@ const { initiateGame, playIteration, startSecondHalf } = require('../../vendor/f
 const { hashSeed, withSeededRandom } = require('./rng')
 const { toMatchFrame } = require('./frameAdapter')
 const { analyzeTactics } = require('./tactical')
+const { applyMovementIntents } = require('./tactical/applyMovementIntents')
 const { addFrameContinuity } = require('./continuity')
 
 const DEFAULT_SECONDS_PER_TICK = 1
@@ -63,6 +64,7 @@ async function initMatch(input) {
 async function stepMatch(matchDetails, options = {}) {
   const secondsPerTick = options.secondsPerTick ?? matchDetails.matchClock?.secondsPerTick ?? DEFAULT_SECONDS_PER_TICK
   matchDetails.tactical = analyzeTactics(matchDetails)
+  applyMovementIntents(matchDetails, matchDetails.tactical)
   const { value: state, rngState } = await withSeededRandom(matchDetails.rngState ?? matchDetails.seed, () => (
     playIteration(matchDetails)
   ))

@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const { assignMovementIntents } = require('../src/match-engine/tactical/movementIntent')
+const { applyMovementIntents } = require('../src/match-engine/tactical/applyMovementIntents')
 
 function player(playerID, teamID, x, y, position = 'CM', hasBall = false) {
   return {
@@ -57,4 +58,21 @@ test('assignMovementIntents falls back to formation target recovery', () => {
     reason: 'recover_shape',
     urgency: 0.45
   })
+})
+
+test('applyMovementIntents writes tactical targets to vendor intent positions', () => {
+  const pressingPlayer = player('B4', 'B', 55, 50)
+  const matchDetails = {
+    pitchSize: [100, 100],
+    ball: { withPlayer: true, withTeam: 'A', Player: 'A8', position: [50, 50, 0] },
+    kickOffTeam: { teamID: 'A', players: [player('A8', 'A', 50, 50, 'CM', true)] },
+    secondTeam: { teamID: 'B', players: [pressingPlayer] }
+  }
+
+  applyMovementIntents(matchDetails, {
+    movementIntents: [{ playerId: 'B4', x: -10, y: 120, reason: 'press', urgency: 0.9 }]
+  })
+
+  assert.deepEqual(pressingPlayer.intentPOS, [0, 100])
+  assert.deepEqual(pressingPlayer.currentPOS, [55, 50])
 })

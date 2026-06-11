@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
-const { simulateMatch, toMatchFrame } = require('../src/match-engine')
+const { initMatch, simulateMatch, stepMatch, toMatchFrame } = require('../src/match-engine')
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8'))
@@ -111,4 +111,17 @@ test('real vendor frames expose reliable public events and stats shape', async (
   assert.equal(goalKickGoals.length, 0)
   assert.equal(typeof result.finalStats.kickOffTeam.goals, 'number')
   assert.equal(typeof result.finalStats.secondTeam.goals, 'number')
+})
+
+test('stepMatch applies tactical movement intents to vendor intent positions', async () => {
+  const state = await initMatch(demoInput('movement-intent-application'))
+  const ballCarrier = state.kickOffTeam.players.find(player => player.hasBall)
+  const defender = state.secondTeam.players[1]
+
+  defender.currentPOS = [ballCarrier.currentPOS[0] + 5, ballCarrier.currentPOS[1]]
+  defender.intentPOS = defender.originPOS.map(value => value)
+
+  await stepMatch(state)
+
+  assert.deepEqual(defender.intentPOS, ballCarrier.currentPOS)
 })

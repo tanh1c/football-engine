@@ -3,6 +3,7 @@ const common = require(`../lib/common`)
 const ballMovement = require(`../lib/ballMovement`)
 const setPositions = require(`../lib/setPositions`)
 const actions = require(`../lib/actions`)
+const { applyMovementIntents } = require(`../../../src/match-engine/tactical/applyMovementIntents`)
 
 function decideMovement(closestPlayer, team, opp, matchDetails) {
   const allActions = [`shoot`, `throughBall`, `pass`, `cross`, `tackle`, `intercept`, `slide`]
@@ -412,6 +413,7 @@ function closestPlayerToBall(closestPlayer, team, matchDetails) {
   }
 
   setPositions.setIntentPosition(matchDetails, closestPlayerDetails)
+  applyMovementIntents(matchDetails, matchDetails.tactical)
   matchDetails.iterationLog.push(`Closest Player to ball: ${closestPlayerDetails.name}`)
 }
 
