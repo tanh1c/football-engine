@@ -113,6 +113,14 @@ test('real vendor frames expose reliable public events and stats shape', async (
   assert.equal(typeof result.finalStats.secondTeam.goals, 'number')
 })
 
+test('simulateMatch separates debug logs from public events', async () => {
+  const result = await simulateMatch(demoInput('debug-separation'), { ticks: 3 })
+
+  assert.ok(result.debugLog.length > 0)
+  assert.equal(result.events.some(event => /^Ball start position/i.test(event.message)), false)
+  assert.equal(result.debugLog.some(entry => /^Ball start position/i.test(entry.message)), true)
+})
+
 test('stepMatch applies tactical movement intents to vendor intent positions', async () => {
   const state = await initMatch(demoInput('movement-intent-application'))
   const ballCarrier = state.kickOffTeam.players.find(player => player.hasBall)

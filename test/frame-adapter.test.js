@@ -35,3 +35,31 @@ test('toMatchFrame filters vendor debug logs from public events', () => {
   assert.equal(frame.events.length, 1)
   assert.equal(frame.events[0].type, 'pass')
 })
+
+test('toMatchFrame preserves vendor debug logs separately from public events', () => {
+  const frame = toMatchFrame(baseMatch([
+    'Ball start position: 340,525,0',
+    'Closest Player to ball: Aiden Smith',
+    'Goal Scored by - Wayne Smith - (ThatTeam)'
+  ]))
+
+  assert.deepEqual(frame.debugLog.map(entry => entry.message), [
+    'Ball start position: 340,525,0',
+    'Closest Player to ball: Aiden Smith'
+  ])
+  assert.equal(frame.events.length, 1)
+})
+
+test('toMatchFrame adds structured fields for parseable public events', () => {
+  const frame = toMatchFrame(baseMatch([
+    'Goal Scored by - Wayne Smith - (ThatTeam)',
+    'ball passed by: Alex Jones',
+    'Shot Made by: Aiden Smith'
+  ]))
+
+  assert.deepEqual(frame.events.map(event => ({ type: event.type, playerName: event.playerName, teamName: event.teamName, outcome: event.outcome })), [
+    { type: 'goal', playerName: 'Wayne Smith', teamName: 'ThatTeam', outcome: 'goal' },
+    { type: 'pass', playerName: 'Alex Jones', teamName: undefined, outcome: undefined },
+    { type: 'shot', playerName: 'Aiden Smith', teamName: undefined, outcome: undefined }
+  ])
+})

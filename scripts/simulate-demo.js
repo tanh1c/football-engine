@@ -12,6 +12,7 @@ async function main() {
   const ticks = Number(process.argv[2] ?? 30)
   const seed = process.argv[3] ?? 'demo-seed'
   const secondsPerTick = Number(process.argv[4] ?? 5)
+  const includeDebug = process.argv.includes('--debug')
   const result = await simulateMatch({
     homeTeam: readJson('vendor/footballSimulationEngine/init_config/team1.json'),
     awayTeam: readJson('vendor/footballSimulationEngine/init_config/team2.json'),
@@ -29,6 +30,7 @@ async function main() {
     secondsPerTick,
     frames: result.frames,
     events: result.events,
+    ...(includeDebug ? { debugLog: result.debugLog } : {}),
     finalStats: result.finalStats
   }, null, 2))
 

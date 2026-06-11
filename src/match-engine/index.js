@@ -97,12 +97,14 @@ async function simulateMatch(input, options = {}) {
   let state = await initMatch(input)
   const frames = [...state.frameHistory]
   const events = []
+  const debugLog = []
 
   for (let index = 0; index < ticks; index++) {
     const result = await stepMatch(state, options)
     state = result.state
     frames.push(result.frame)
     events.push(...result.events)
+    debugLog.push(...(result.frame.debugLog ?? []))
   }
 
   const continuousFrames = addFrameContinuity(frames)
@@ -111,6 +113,7 @@ async function simulateMatch(input, options = {}) {
     state,
     frames: continuousFrames,
     events,
+    debugLog,
     finalStats: {
       kickOffTeam: state.kickOffTeamStatistics,
       secondTeam: state.secondTeamStatistics

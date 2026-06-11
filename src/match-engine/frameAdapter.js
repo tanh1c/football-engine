@@ -25,6 +25,37 @@ function isPublicLogMessage(message) {
   return !DEBUG_LOG_PREFIXES.some(prefix => lower.startsWith(prefix))
 }
 
+function parseEventDetails(message, type) {
+  const text = String(message)
+  const goal = text.match(/^Goal Scored by - (.+) - \((.+)\)$/i)
+  if (goal) return { playerName: goal[1], teamName: goal[2], outcome: 'goal' }
+
+  const pass = text.match(/^ball passed by: (.+)$/i) ?? text.match(/^passed by: (.+)$/i)
+  if (pass) return { playerName: pass[1] }
+
+  const shot = text.match(/^Shot Made by: (.+)$/i)
+  if (shot) return { playerName: shot[1] }
+
+  if (type === 'set_piece') {
+    const setPiece = text.match(/^(Goal Kick|Corner|Throw in|freekick|penalty)(?: to| awarded|:)?\s*-?\s*(.*)$/i)
+    if (setPiece?.[2]) return { teamName: setPiece[2].replace(/^to:\s*/i, '').trim() || undefined }
+  }
+
+  return {}
+}
+
+function mapDebugLog(matchDetails, clock) {
+  return (matchDetails.iterationLog ?? [])
+    .filter(message => !isPublicLogMessage(message))
+    .map((message, index) => ({
+      id: `${clock.tick}:debug:${index}`,
+      tick: clock.tick,
+      minute: clock.minute,
+      second: clock.second,
+      message: String(message)
+    }))
+}
+
 function mapPlayer(player, team, side, tactical) {
   const [x = 0, y = 0] = Array.isArray(player.currentPOS) ? player.currentPOS : []
   const id = String(player.playerID ?? `${team.teamID ?? team.name}-${player.name}`)
@@ -68,19 +99,20 @@ function mapEvents(matchDetails, clock, tactical) {
   return (matchDetails.iterationLog ?? [])
     .filter(isPublicLogMessage)
     .map((message, index) => {
-    const type = classifyLogMessage(message)
-    return {
-      id: `${clock.tick}:${index}`,
-      tick: clock.tick,
-      minute: clock.minute,
-      second: clock.second,
-      type,
-      message: String(message),
-      phase: tactical?.phase,
-      pressure: tactical?.pressure?.score,
-      xg: type === 'shot' || type === 'goal' ? tactical?.shotQuality?.xg : undefined
-    }
-  })
+      const type = classifyLogMessage(message)
+      return {
+        id: `${clock.tick}:${index}`,
+        tick: clock.tick,
+        minute: clock.minute,
+        second: clock.second,
+        type,
+        message: String(message),
+        ...parseEventDetails(message, type),
+        phase: tactical?.phase,
+        pressure: tactical?.pressure?.score,
+        xg: type === 'shot' || type === 'goal' ? tactical?.shotQuality?.xg : undefined
+      }
+    })
 }
 
 function toMatchFrame(matchDetails, tactical) {
@@ -118,6 +150,7 @@ function toMatchFrame(matchDetails, tactical) {
     },
     players,
     events: mapEvents(matchDetails, clock, tactical),
+    debugLog: mapDebugLog(matchDetails, clock),
     tactical
   }
 }
