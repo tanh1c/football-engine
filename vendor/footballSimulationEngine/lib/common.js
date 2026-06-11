@@ -2,8 +2,18 @@ const fs = require('fs')
 //---------------
 //Maths Functions
 //---------------
+let randomSource = Math.random
+
+function random() {
+  return randomSource()
+}
+
+function setRandomSource(nextRandomSource) {
+  randomSource = nextRandomSource ?? Math.random
+}
+
 function getRandomNumber(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min
+  return Math.floor(random() * (max - min + 1)) + min
 }
 
 function round(value, decimals) {
@@ -156,6 +166,8 @@ function distance(pos1, pos2) {
 
 module.exports = {
   getRandomNumber,
+  random,
+  setRandomSource,
   round,
   isInjured,
   matchInjury,

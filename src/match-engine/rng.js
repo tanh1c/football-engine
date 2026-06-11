@@ -1,5 +1,7 @@
 'use strict'
 
+const vendorCommon = require('../../vendor/footballSimulationEngine/lib/common')
+
 const UINT32_MAX_PLUS_ONE = 0x100000000
 
 function hashSeed(seed) {
@@ -27,16 +29,21 @@ function createSeededRandom(seedOrState) {
   return random
 }
 
+let seededRandomActive = false
+
 async function withSeededRandom(seedOrState, operation) {
-  const originalRandom = Math.random
+  if (seededRandomActive) throw new Error('A seeded random operation is already active')
+
+  seededRandomActive = true
   const random = createSeededRandom(seedOrState)
-  Math.random = random
+  vendorCommon.setRandomSource(random)
 
   try {
     const value = await operation()
     return { value, rngState: random.getState() }
   } finally {
-    Math.random = originalRandom
+    vendorCommon.setRandomSource()
+    seededRandomActive = false
   }
 }
 

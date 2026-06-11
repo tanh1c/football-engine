@@ -460,9 +460,9 @@ function setBallMovementMatchDetails(matchDetails, thisPlayer, thisPos, thisTeam
 
 function checkForHandball(thisPOS, calcHeight) {
   const ratio = thisPOS[2] / calcHeight
-  if (ratio <= 0.5) return Math.random() < 0.08
-  else if (ratio <= 0.8) return Math.random() < 0.35
-  return Math.random() < 0.18
+  if (ratio <= 0.5) return common.random() < 0.08
+  else if (ratio <= 0.8) return common.random() < 0.35
+  return common.random() < 0.18
 }
 
 function setAttackBodyPart(thisPOS, calcHeight) {
