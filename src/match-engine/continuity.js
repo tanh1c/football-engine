@@ -8,6 +8,30 @@ function ballPoint(ball = {}) {
   }
 }
 
+function playerPositions(frame) {
+  return new Map((frame.players ?? []).map(player => [player.id, player]))
+}
+
+function hasLargePlayerJump(previous, frame) {
+  const previousPlayers = playerPositions(previous)
+  return (frame.players ?? []).some(player => {
+    const before = previousPlayers.get(player.id)
+    if (!before) return false
+    return Math.hypot(Number(player.x) - Number(before.x), Number(player.y) - Number(before.y)) > 35
+  })
+}
+
+function isResetEvent(frame) {
+  return (frame.events ?? []).some(event => event.type === 'set_piece' || /kick off|second half/i.test(event.message ?? ''))
+}
+
+function discontinuityFor(previous, frame) {
+  if (previous && isResetEvent(frame) && hasLargePlayerJump(previous, frame)) {
+    return { type: 'set_piece_reset', interpolate: false }
+  }
+  return undefined
+}
+
 function addFrameContinuity(frames) {
   return (frames ?? []).map((frame, index, allFrames) => {
     const previous = allFrames[index - 1]
@@ -19,6 +43,7 @@ function addFrameContinuity(frames) {
         previousTick: previous?.tick,
         nextTick: next?.tick
       },
+      discontinuity: discontinuityFor(previous, frame),
       ball: {
         ...frame.ball,
         trajectory: next ? {

@@ -122,3 +122,28 @@ test('interpolateFrame attaches ball to interpolated receiver after possession c
   assert.equal(frame.ball.y, 7.5)
   assert.equal(frame.ball.ownerPlayerId, 'A1')
 })
+
+test('interpolateFrame cuts directly to discontinuity frames', async () => {
+  const { interpolateFrame } = await loadModule()
+  const frame = interpolateFrame({
+    tick: 1,
+    minute: 0,
+    second: 1,
+    pitch: { width: 100, height: 100 },
+    ball: { x: 10, y: 10, z: 0 },
+    players: [{ id: 'A1', x: 10, y: 10 }],
+    events: []
+  }, {
+    tick: 2,
+    minute: 0,
+    second: 2,
+    pitch: { width: 100, height: 100 },
+    discontinuity: { type: 'set_piece_reset', interpolate: false },
+    ball: { x: 90, y: 90, z: 0 },
+    players: [{ id: 'A1', x: 90, y: 90 }],
+    events: []
+  }, 0.25)
+
+  assert.equal(frame.players[0].x, 90)
+  assert.equal(frame.ball.x, 90)
+})

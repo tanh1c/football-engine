@@ -28,3 +28,25 @@ test('addFrameContinuity derives ball trajectory from neighboring frames', () =>
     reason: 'frame_delta'
   })
 })
+
+test('addFrameContinuity marks large set-piece player jumps as discontinuity', () => {
+  const frames = addFrameContinuity([
+    {
+      tick: 1,
+      players: [{ id: 'A1', x: 10, y: 10 }],
+      ball: { x: 10, y: 10, z: 0 },
+      events: []
+    },
+    {
+      tick: 2,
+      players: [{ id: 'A1', x: 90, y: 90 }],
+      ball: { x: 90, y: 90, z: 0 },
+      events: [{ type: 'set_piece', message: 'Goal Kick to - ThisTeam' }]
+    }
+  ])
+
+  assert.deepEqual(frames[1].discontinuity, {
+    type: 'set_piece_reset',
+    interpolate: false
+  })
+})

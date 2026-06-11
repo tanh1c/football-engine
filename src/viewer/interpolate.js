@@ -76,6 +76,7 @@ export function playbackSpeedLabel(speed) {
 
 export function interpolateFrame(current, next, ratio) {
   if (!current) return undefined
+  if (next?.discontinuity?.interpolate === false) return next
   const boundedRatio = clampRatio(ratio)
   if (!next) return { ...current, players: [...(current.players ?? [])], ball: { ...(current.ball ?? {}) } }
   const totalSeconds = lerp(frameSeconds(current), frameSeconds(next), boundedRatio)
