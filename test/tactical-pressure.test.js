@@ -36,3 +36,19 @@ test('calculatePressure counts opponents inside pressure radii', () => {
   assert.equal(result.closeOpponents, 1)
   assert.equal(result.nearbyOpponents, 2)
 })
+
+test('calculatePressure does not count possession teammates as opponents in vendor-shaped state', () => {
+  const result = calculatePressure({
+    ball: { position: [50, 50, 0], withTeam: 'A', Player: 'A8' },
+    kickOffTeam: { teamID: 'A', players: [
+      { playerID: 'A8', currentPOS: [50, 50] },
+      { playerID: 'A10', currentPOS: [52, 50] }
+    ] },
+    secondTeam: { teamID: 'B', players: [
+      { playerID: 'B4', currentPOS: [70, 50] }
+    ] }
+  })
+
+  assert.equal(result.nearestOpponentId, 'B4')
+  assert.equal(result.closeOpponents, 0)
+})

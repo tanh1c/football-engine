@@ -6,19 +6,21 @@ function distance(a, b) {
   return Math.sqrt((dx * dx) + (dy * dy))
 }
 
-function allPlayers(matchDetails) {
-  return [
-    ...(matchDetails.kickOffTeam?.players ?? []),
-    ...(matchDetails.secondTeam?.players ?? [])
-  ]
+function activePlayers(team) {
+  return (team?.players ?? []).filter(player => Array.isArray(player.currentPOS) && player.currentPOS[0] !== 'NP')
+}
+
+function opponentPlayers(matchDetails, possessionTeamId) {
+  const teams = [matchDetails.kickOffTeam, matchDetails.secondTeam]
+  return teams
+    .filter(team => String(team?.teamID) !== String(possessionTeamId))
+    .flatMap(activePlayers)
 }
 
 function calculatePressure(matchDetails) {
   const ball = matchDetails.ball ?? {}
   const point = Array.isArray(ball.position) ? ball.position : [0, 0]
-  const opponents = allPlayers(matchDetails).filter(player => (
-    player.teamID !== ball.withTeam && Array.isArray(player.currentPOS) && player.currentPOS[0] !== 'NP'
-  ))
+  const opponents = opponentPlayers(matchDetails, ball.withTeam)
 
   let nearestOpponentId
   let nearestDistance = Infinity
