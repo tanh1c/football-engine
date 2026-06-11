@@ -5,10 +5,24 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const DEBUG_LOG_PREFIXES = [
+  'ball start position:',
+  'ball end position:',
+  'closest player to ball:',
+  'closest player to position:',
+  'creating new ball movement',
+  'ball still moving from previous kick:'
+]
+
 function playerStatus(player) {
   if (player.redCard === true || player.sentOff === true) return 'sent_off'
   if (player.injured === true) return 'injured'
   return 'normal'
+}
+
+function isPublicLogMessage(message) {
+  const lower = String(message).toLowerCase()
+  return !DEBUG_LOG_PREFIXES.some(prefix => lower.startsWith(prefix))
 }
 
 function mapPlayer(player, team, side, tactical) {
@@ -36,21 +50,24 @@ function classifyLogMessage(message) {
   const text = String(message)
   const lower = text.toLowerCase()
 
-  if (lower.includes('goal')) return 'goal'
-  if (lower.includes('shot') || lower.includes('shoot')) return 'shot'
-  if (lower.includes('pass')) return 'pass'
-  if (lower.includes('tackle')) return 'tackle'
+  if (lower.includes('goal kick')) return 'set_piece'
   if (lower.includes('corner')) return 'set_piece'
   if (lower.includes('throw')) return 'set_piece'
   if (lower.includes('free kick') || lower.includes('freekick')) return 'set_piece'
   if (lower.includes('penalty')) return 'set_piece'
+  if (lower.includes('goal scored') || lower.includes('goal')) return 'goal'
+  if (lower.includes('shot') || lower.includes('shoot')) return 'shot'
+  if (lower.includes('pass')) return 'pass'
+  if (lower.includes('tackle')) return 'tackle'
   if (lower.includes('offside')) return 'offside'
   if (lower.includes('foul')) return 'foul'
   return 'commentary'
 }
 
 function mapEvents(matchDetails, clock, tactical) {
-  return (matchDetails.iterationLog ?? []).map((message, index) => {
+  return (matchDetails.iterationLog ?? [])
+    .filter(isPublicLogMessage)
+    .map((message, index) => {
     const type = classifyLogMessage(message)
     return {
       id: `${clock.tick}:${index}`,
