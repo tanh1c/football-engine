@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
-const { initMatch, simulateMatch, stepMatch, toMatchFrame } = require('../src/match-engine')
+const { initMatch, simulateFullMatch, simulateMatch, stepMatch, toMatchFrame } = require('../src/match-engine')
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8'))
@@ -132,4 +132,32 @@ test('stepMatch applies tactical movement intents to vendor intent positions', a
   await stepMatch(state)
 
   assert.deepEqual(defender.intentPOS, ballCarrier.currentPOS)
+})
+
+test('simulateFullMatch runs both halves with a half-time reset frame', async () => {
+  const result = await simulateFullMatch(demoInput('tiny-full-match'), {
+    firstHalfTicks: 2,
+    secondHalfTicks: 2
+  })
+
+  assert.equal(result.state.half, 2)
+  assert.equal(result.halves.first.ticks, 2)
+  assert.equal(result.halves.second.ticks, 2)
+  assert.equal(result.frames.length, 6)
+  assert.ok(result.frames.some(frame => /second half/i.test(frame.events?.[0]?.message ?? '')))
+  assert.ok(result.frames.some(frame => frame.discontinuity?.type === 'set_piece_reset'))
+})
+
+test('simulateFullMatch is deterministic for the same seed', async () => {
+  const first = await simulateFullMatch(demoInput('tiny-full-match-repeatable'), {
+    firstHalfTicks: 2,
+    secondHalfTicks: 2
+  })
+  const second = await simulateFullMatch(demoInput('tiny-full-match-repeatable'), {
+    firstHalfTicks: 2,
+    secondHalfTicks: 2
+  })
+
+  assert.deepEqual(first.frames, second.frames)
+  assert.deepEqual(first.finalStats, second.finalStats)
 })

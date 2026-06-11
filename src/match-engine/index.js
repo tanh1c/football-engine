@@ -84,12 +84,40 @@ async function stepMatch(matchDetails, options = {}) {
 }
 
 async function startSecondHalfMatch(matchDetails) {
-  const state = await startSecondHalf(matchDetails)
+  const { value: state, rngState } = await withSeededRandom(matchDetails.rngState ?? matchDetails.seed, () => (
+    startSecondHalf(matchDetails)
+  ))
+  state.rngState = rngState
   state.matchClock = normalizeClock(state.matchClock, state.matchClock?.secondsPerTick ?? DEFAULT_SECONDS_PER_TICK)
   const tactical = analyzeTactics(state)
   const frame = toMatchFrame(state, tactical)
   state.frameHistory = [...(state.frameHistory ?? []), frame]
   return { state, frame, events: frame.events }
+}
+
+async function collectTicks(state, ticks, options, frames, events, debugLog) {
+  for (let index = 0; index < ticks; index++) {
+    const result = await stepMatch(state, options)
+    state = result.state
+    frames.push(result.frame)
+    events.push(...result.events)
+    debugLog.push(...(result.frame.debugLog ?? []))
+  }
+  return state
+}
+
+function matchResult(state, frames, events, debugLog, extra = {}) {
+  return {
+    state,
+    frames: addFrameContinuity(frames),
+    events,
+    debugLog,
+    finalStats: {
+      kickOffTeam: state.kickOffTeamStatistics,
+      secondTeam: state.secondTeamStatistics
+    },
+    ...extra
+  }
 }
 
 async function simulateMatch(input, options = {}) {
@@ -99,30 +127,41 @@ async function simulateMatch(input, options = {}) {
   const events = []
   const debugLog = []
 
-  for (let index = 0; index < ticks; index++) {
-    const result = await stepMatch(state, options)
-    state = result.state
-    frames.push(result.frame)
-    events.push(...result.events)
-    debugLog.push(...(result.frame.debugLog ?? []))
-  }
+  state = await collectTicks(state, ticks, options, frames, events, debugLog)
 
-  const continuousFrames = addFrameContinuity(frames)
+  return matchResult(state, frames, events, debugLog)
+}
 
-  return {
-    state,
-    frames: continuousFrames,
-    events,
-    debugLog,
-    finalStats: {
-      kickOffTeam: state.kickOffTeamStatistics,
-      secondTeam: state.secondTeamStatistics
+async function simulateFullMatch(input, options = {}) {
+  const secondsPerTick = Number(options.secondsPerTick ?? input.secondsPerTick ?? DEFAULT_SECONDS_PER_TICK)
+  const firstHalfTicks = Number(options.firstHalfTicks ?? Math.ceil((45 * 60) / secondsPerTick))
+  const secondHalfTicks = Number(options.secondHalfTicks ?? Math.ceil((45 * 60) / secondsPerTick))
+  let state = await initMatch(input)
+  const frames = [...state.frameHistory]
+  const events = []
+  const debugLog = []
+
+  state = await collectTicks(state, firstHalfTicks, options, frames, events, debugLog)
+
+  const secondHalf = await startSecondHalfMatch(state)
+  state = secondHalf.state
+  frames.push(secondHalf.frame)
+  events.push(...secondHalf.events)
+  debugLog.push(...(secondHalf.frame.debugLog ?? []))
+
+  state = await collectTicks(state, secondHalfTicks, options, frames, events, debugLog)
+
+  return matchResult(state, frames, events, debugLog, {
+    halves: {
+      first: { ticks: firstHalfTicks },
+      second: { ticks: secondHalfTicks }
     }
-  }
+  })
 }
 
 module.exports = {
   initMatch,
+  simulateFullMatch,
   simulateMatch,
   startSecondHalfMatch,
   stepMatch,
