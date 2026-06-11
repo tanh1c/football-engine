@@ -110,8 +110,8 @@ async function simulateMatch(input, options = {}) {
     frames: continuousFrames,
     events,
     finalStats: {
-      kickOffTeam: state.kickOffTeam?.statistics,
-      secondTeam: state.secondTeam?.statistics
+      kickOffTeam: state.kickOffTeamStatistics,
+      secondTeam: state.secondTeamStatistics
     }
   }
 }

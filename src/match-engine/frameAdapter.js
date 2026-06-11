@@ -89,8 +89,8 @@ function toMatchFrame(matchDetails, tactical) {
       height: toNumber(matchDetails.pitchSize?.[1] ?? matchDetails.pitchHeight)
     },
     score: {
-      [String(matchDetails.kickOffTeam?.teamID ?? matchDetails.kickOffTeam?.name ?? 'home')]: toNumber(matchDetails.kickOffTeam?.statistics?.goals),
-      [String(matchDetails.secondTeam?.teamID ?? matchDetails.secondTeam?.name ?? 'away')]: toNumber(matchDetails.secondTeam?.statistics?.goals)
+      [String(matchDetails.kickOffTeam?.teamID ?? matchDetails.kickOffTeam?.name ?? 'home')]: toNumber(matchDetails.kickOffTeamStatistics?.goals),
+      [String(matchDetails.secondTeam?.teamID ?? matchDetails.secondTeam?.name ?? 'away')]: toNumber(matchDetails.secondTeamStatistics?.goals)
     },
     ball: {
       x: toNumber(ballPosition[0]),

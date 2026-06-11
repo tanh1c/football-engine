@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
-const { simulateMatch } = require('../src/match-engine')
+const { simulateMatch, toMatchFrame } = require('../src/match-engine')
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8'))
@@ -84,4 +84,20 @@ test('full phase 2 action recommendations keep simulation deterministic', async 
 
   assert.deepEqual(first.frames, second.frames)
   assert.deepEqual(first.events, second.events)
+})
+
+test('toMatchFrame reads goals from vendor match statistics', () => {
+  const frame = toMatchFrame({
+    matchClock: { tick: 1, minute: 0, second: 1, secondsPerTick: 1 },
+    pitchSize: [100, 100],
+    ball: { position: [50, 50, 0] },
+    kickOffTeam: { teamID: 'A', players: [] },
+    secondTeam: { teamID: 'B', players: [] },
+    kickOffTeamStatistics: { goals: 2 },
+    secondTeamStatistics: { goals: 1 },
+    iterationLog: []
+  })
+
+  assert.equal(frame.score.A, 2)
+  assert.equal(frame.score.B, 1)
 })
