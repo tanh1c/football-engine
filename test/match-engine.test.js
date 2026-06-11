@@ -101,3 +101,14 @@ test('toMatchFrame reads goals from vendor match statistics', () => {
   assert.equal(frame.score.A, 2)
   assert.equal(frame.score.B, 1)
 })
+
+test('real vendor frames expose reliable public events and stats shape', async () => {
+  const result = await simulateMatch(demoInput('vendor-regression'), { ticks: 120 })
+  const debugEvents = result.events.filter(event => /^(Ball start position|Ball end position|Closest Player to ball|creating new ball movement)/i.test(event.message))
+  const goalKickGoals = result.events.filter(event => event.type === 'goal' && /goal kick/i.test(event.message))
+
+  assert.equal(debugEvents.length, 0)
+  assert.equal(goalKickGoals.length, 0)
+  assert.equal(typeof result.finalStats.kickOffTeam.goals, 'number')
+  assert.equal(typeof result.finalStats.secondTeam.goals, 'number')
+})
