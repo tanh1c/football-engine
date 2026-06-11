@@ -689,7 +689,6 @@ function ballCrossed(matchDetails, team, player) {
   ]
   const bodyPart = setAttackBodyPart([0, 0, 0], 100)
   matchDetails.ball.lastTouch.bodyPart = bodyPart
-  console.log(finalTarget)
   let temp = calcBallMovementOverTime(matchDetails, power * 1.1, finalTarget, player, 'cross')
   return temp
 }
