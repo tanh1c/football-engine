@@ -9,6 +9,14 @@ const ballMovement = require('./lib/ballMovement')
 const validate = require('./lib/validate')
 const actions = require('./lib/actions')
 
+function teamForPlayer(player, kickOffTeam, secondTeam) {
+  const playerID = String(player?.playerID)
+  const isKickOffPlayer = (kickOffTeam.players ?? []).some(teamPlayer => String(teamPlayer.playerID) === playerID)
+  return isKickOffPlayer
+    ? { team: kickOffTeam, opp: secondTeam }
+    : { team: secondTeam, opp: kickOffTeam }
+}
+
 //------------------------
 //    Functions
 //------------------------
@@ -68,14 +76,7 @@ async function playIteration(matchDetails) {
   if (validBallMoves.length > 0) {
     const chosenMove = validBallMoves[common.getRandomNumber(0, validBallMoves.length - 1)]
     const { player } = chosenMove
-    let team, opp
-    if (player.teamID === kickOffTeam.teamID) {
-      team = kickOffTeam
-      opp = secondTeam
-    } else {
-      team = secondTeam
-      opp = kickOffTeam
-    }
+    const { team, opp } = teamForPlayer(player, kickOffTeam, secondTeam)
     if (team.teamID === kickOffTeam.teamID) {
       matchDetails.kickOffTeam = playerMovement.executeBallAction(chosenMove, team, opp, matchDetails)
     } else {

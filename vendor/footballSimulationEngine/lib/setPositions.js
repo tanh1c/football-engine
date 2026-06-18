@@ -2,15 +2,82 @@ const common = require(`../lib/common`)
 const setVariables = require(`../lib/setVariables`)
 const setFreekicks = require(`../lib/setFreekicks`)
 
+function ensureEvents(matchDetails) {
+  if (!Array.isArray(matchDetails.events)) matchDetails.events = []
+  return matchDetails.events
+}
+
+function nextEventId(matchDetails, prefix) {
+  matchDetails._eventCounter = Number(matchDetails._eventCounter ?? 0) + 1
+  return `${matchDetails.matchClock?.tick ?? 0}:${prefix}:${matchDetails._eventCounter}`
+}
+
+function pushStructuredEvent(matchDetails, event) {
+  const events = ensureEvents(matchDetails)
+  const clock = matchDetails.matchClock ?? {}
+  const structuredEvent = {
+    id: event.id ?? nextEventId(matchDetails, event.type ?? 'event'),
+    tick: event.tick ?? clock.tick ?? 0,
+    minute: event.minute ?? clock.minute ?? 0,
+    second: event.second ?? clock.second ?? 0,
+    ...event
+  }
+  events.push(structuredEvent)
+  return structuredEvent
+}
+
+function positionEvent(position) {
+  return { x: Number(position[0]), y: Number(position[1]) }
+}
+
+function pushSetPieceEvent(matchDetails, kind, team, position, reason = 'ball_out') {
+  return pushStructuredEvent(matchDetails, {
+    type: 'set_piece',
+    kind,
+    teamId: String(team.teamID),
+    teamName: team.name,
+    position: positionEvent(position),
+    reason,
+    message: `${kind.replace('_', ' ')} to - ${team.name}`
+  })
+}
+
+function currentShotEvent(matchDetails) {
+  const lastTouch = matchDetails.ball?.lastTouch ?? {}
+  if (lastTouch.action !== 'shot' && lastTouch.action !== 'penalty') return undefined
+  if (!lastTouch.shotEventId) return undefined
+
+  return (matchDetails.events ?? []).find(event => (
+    event.type === 'shot' &&
+    event.id === lastTouch.shotEventId &&
+    event.outcome === 'pending'
+  ))
+}
+
+function resolveShotOutcome(matchDetails, outcome, details = {}) {
+  const shot = currentShotEvent(matchDetails)
+  if (!shot) return undefined
+
+  Object.assign(shot, { outcome, ...details })
+  if (matchDetails.ball?.lastTouch) delete matchDetails.ball.lastTouch.shotEventId
+  return shot
+}
+
 function setGoalieHasBall(matchDetails, thisGoalie) {
   let { kickOffTeam, secondTeam } = matchDetails
   let team = (kickOffTeam.players[0].playerID == thisGoalie.playerID) ? kickOffTeam : secondTeam
   let opposition = (kickOffTeam.players[0].playerID == thisGoalie.playerID) ? secondTeam : kickOffTeam
+  const shotEventId = matchDetails.ball.lastTouch.shotEventId
+  const shotAction = matchDetails.ball.lastTouch.action
   thisGoalie.hasBall = true
   matchDetails.ball.lastTouch.playerName = thisGoalie.name
   matchDetails.ball.lastTouch.playerID = thisGoalie.playerID
   matchDetails.ball.lastTouch.teamID = team.teamID
   matchDetails.ball.lastTouch.deflection = false
+  if ((shotAction === 'shot' || shotAction === 'penalty') && shotEventId) {
+    matchDetails.ball.lastTouch.action = shotAction
+    matchDetails.ball.lastTouch.shotEventId = shotEventId
+  }
   matchDetails.ball.position = [...thisGoalie.currentPOS, 0]
   matchDetails.ball.Player = thisGoalie.playerID
   matchDetails.ball.withPlayer = true
@@ -117,6 +184,9 @@ function setBottomRightCornerPositions(matchDetails) {
 }
 
 function setBallSpecificCornerValue(matchDetails, attack) {
+  if (attack.teamID == matchDetails.kickOffTeam.teamID) matchDetails.kickOffTeamStatistics.corners++
+  else matchDetails.secondTeamStatistics.corners++
+  pushSetPieceEvent(matchDetails, 'corner', attack, matchDetails.ball.position)
   attack.players[1].hasBall = true
   matchDetails.ball.lastTouch.playerName = attack.players[1].name
   matchDetails.ball.lastTouch.playerID = attack.players[1].playerID
@@ -144,6 +214,7 @@ function setLeftKickOffTeamThrowIn(matchDetails, ballIntended) {
   attackLeftThrowInPlayerPosition(pitchHeight, kickOffTeam, place)
   defenceLeftThrowInPlayerPosition(pitchHeight, secondTeam, place)
   matchDetails.ball.position = [0, place, 0]
+  pushSetPieceEvent(matchDetails, 'throw_in', kickOffTeam, matchDetails.ball.position)
   kickOffTeam.players[5].currentPOS = matchDetails.ball.position.map(x => x)
   matchDetails.ball.lastTouch.playerName = kickOffTeam.players[5].name
   matchDetails.ball.lastTouch.playerID = kickOffTeam.players[5].playerID
@@ -168,6 +239,7 @@ function setRightKickOffTeamThrowIn(matchDetails, ballIntended) {
   attackRightThrowInPlayerPosition(matchDetails.pitchSize, kickOffTeam, place)
   defenceRightThrowInPlayerPosition(matchDetails.pitchSize, secondTeam, place)
   matchDetails.ball.position = [pitchWidth, place, 0]
+  pushSetPieceEvent(matchDetails, 'throw_in', kickOffTeam, matchDetails.ball.position)
   kickOffTeam.players[5].currentPOS = matchDetails.ball.position.map(x => x)
   matchDetails.ball.lastTouch.playerName = kickOffTeam.players[5].name
   matchDetails.ball.lastTouch.playerID = kickOffTeam.players[5].playerID
@@ -192,6 +264,7 @@ function setLeftSecondTeamThrowIn(matchDetails, ballIntended) {
   attackLeftThrowInPlayerPosition(pitchHeight, secondTeam, place)
   defenceLeftThrowInPlayerPosition(pitchHeight, kickOffTeam, place)
   matchDetails.ball.position = [0, place, 0]
+  pushSetPieceEvent(matchDetails, 'throw_in', secondTeam, matchDetails.ball.position)
   secondTeam.players[5].currentPOS = matchDetails.ball.position.map(x => x)
   matchDetails.ball.lastTouch.playerName = secondTeam.players[5].name
   matchDetails.ball.lastTouch.playerID = secondTeam.players[5].playerID
@@ -216,6 +289,7 @@ function setRightSecondTeamThrowIn(matchDetails, ballIntended) {
   attackRightThrowInPlayerPosition(matchDetails.pitchSize, secondTeam, place)
   defenceRightThrowInPlayerPosition(matchDetails.pitchSize, kickOffTeam, place)
   matchDetails.ball.position = [pitchWidth, place, 0]
+  pushSetPieceEvent(matchDetails, 'throw_in', secondTeam, matchDetails.ball.position)
   secondTeam.players[5].currentPOS = matchDetails.ball.position.map(x => x)
   matchDetails.ball.lastTouch.playerName = secondTeam.players[5].name
   matchDetails.ball.lastTouch.playerID = secondTeam.players[5].playerID
@@ -293,6 +367,7 @@ function setTopGoalKick(matchDetails) {
 }
 
 function setBallSpecificGoalKickValue(matchDetails, attack) {
+  pushSetPieceEvent(matchDetails, 'goal_kick', attack, matchDetails.ball.position)
   attack.players[0].currentPOS = matchDetails.ball.position.map(x => x)
   attack.players[0].currentPOS.pop()
   attack.players[0].hasBall = true
@@ -336,21 +411,25 @@ function setSetpieceKickOffTeam(matchDetails) {
   let attackingTowardsTop = (matchDetails.kickOffTeam.players[0].currentPOS[1] > pitchHeight / 2)
   if (attackingTowardsTop && common.inTopPenalty(matchDetails, ballPosition)) {
     matchDetails.kickOffTeamStatistics.penalties++
+    pushSetPieceEvent(matchDetails, 'penalty', matchDetails.kickOffTeam, ballPosition, 'penalty_area_infringement')
     matchDetails.iterationLog.push(`penalty to: ${matchDetails.kickOffTeam.name}`)
     matchDetails.iterationLog.push(`penalty awarded, ball moved to penalty spot`)
     return setTopPenalty(matchDetails)
   } else if (attackingTowardsTop == false && common.inBottomPenalty(matchDetails, ballPosition)) {
     matchDetails.kickOffTeamStatistics.penalties++
+    pushSetPieceEvent(matchDetails, 'penalty', matchDetails.kickOffTeam, ballPosition, 'penalty_area_infringement')
     matchDetails.iterationLog.push(`penalty to: ${matchDetails.kickOffTeam.name}`)
     matchDetails.iterationLog.push(`penalty awarded, ball moved to penalty spot`)
     return setBottomPenalty(matchDetails)
   } else if (attackingTowardsTop) {
     matchDetails.kickOffTeamStatistics.freekicks++
+    pushSetPieceEvent(matchDetails, 'free_kick', matchDetails.kickOffTeam, ballPosition, 'infringement')
     matchDetails.iterationLog.push(`freekick to: ${matchDetails.kickOffTeam.name} [${matchDetails.ball.position}]`)
     matchDetails.iterationLog.push(`freekick awarded`)
     return setFreekicks.setBottomFreekick(matchDetails, ballPosition)
   }
   matchDetails.kickOffTeamStatistics.freekicks++
+  pushSetPieceEvent(matchDetails, 'free_kick', matchDetails.kickOffTeam, ballPosition, 'infringement')
   matchDetails.iterationLog.push(`freekick to: ${matchDetails.kickOffTeam.name} [${matchDetails.ball.position}]`)
   matchDetails.iterationLog.push(`freekick awarded`)
   return setFreekicks.setTopFreekick(matchDetails, ballPosition)
@@ -362,18 +441,22 @@ function setSetpieceSecondTeam(matchDetails) {
   let attackingTowardsTop = (matchDetails.secondTeam.players[0].currentPOS[1] > pitchHeight / 2)
   if (attackingTowardsTop && common.inTopPenalty(matchDetails, ballPosition)) {
     matchDetails.secondTeamStatistics.penalties++
+    pushSetPieceEvent(matchDetails, 'penalty', matchDetails.secondTeam, ballPosition, 'penalty_area_infringement')
     matchDetails.iterationLog.push(`penalty to: ${matchDetails.secondTeam.name}`)
     return setTopPenalty(matchDetails)
   } else if (attackingTowardsTop == false && common.inBottomPenalty(matchDetails, ballPosition)) {
     matchDetails.secondTeamStatistics.penalties++
+    pushSetPieceEvent(matchDetails, 'penalty', matchDetails.secondTeam, ballPosition, 'penalty_area_infringement')
     matchDetails.iterationLog.push(`penalty to: ${matchDetails.secondTeam.name}`)
     return setBottomPenalty(matchDetails)
   } else if (attackingTowardsTop) {
     matchDetails.secondTeamStatistics.freekicks++
+    pushSetPieceEvent(matchDetails, 'free_kick', matchDetails.secondTeam, ballPosition, 'infringement')
     matchDetails.iterationLog.push(`freekick to: ${matchDetails.secondTeam.name} [${matchDetails.ball.position}]`)
     return setFreekicks.setBottomFreekick(matchDetails, ballPosition)
   }
   matchDetails.secondTeamStatistics.freekicks++
+  pushSetPieceEvent(matchDetails, 'free_kick', matchDetails.secondTeam, ballPosition, 'infringement')
   matchDetails.iterationLog.push(`freekick to: ${matchDetails.secondTeam.name} [${matchDetails.ball.position}]`)
   return setFreekicks.setTopFreekick(matchDetails, ballPosition)
 }
@@ -461,7 +544,23 @@ function setBallSpecificPenaltyValue(matchDetails, shootArray, attack) {
 }
 
 function setKickOffTeamGoalScored(matchDetails) {
-  let scorer = matchDetails.ball.lastTouch.playerName
+  const fallbackScorer = matchDetails.ball.lastTouch.playerName
+  const shotEvent = resolveShotOutcome(matchDetails, 'goal')
+  const scorer = shotEvent?.playerName ?? fallbackScorer
+  pushStructuredEvent(matchDetails, {
+    type: 'goal',
+    shotId: shotEvent?.id,
+    playerId: shotEvent?.playerId,
+    playerName: scorer,
+    teamName: shotEvent?.teamName ?? matchDetails.kickOffTeam.name,
+    teamId: String(shotEvent?.teamId ?? matchDetails.kickOffTeam.teamID),
+    xg: shotEvent?.xg,
+    phase: shotEvent?.phase,
+    pressure: shotEvent?.pressure,
+    outcome: 'goal',
+    message: `Goal Scored by - ${scorer} - (${matchDetails.kickOffTeam.name})`,
+    commentaryText: `Goal for ${matchDetails.kickOffTeam.name}!`
+  })
   matchDetails.iterationLog.push(`Goal Scored by - ${scorer} - (${matchDetails.kickOffTeam.name})`)
   let thisIndex = matchDetails.kickOffTeam.players.findIndex(thisPlayer => thisPlayer.name == scorer)
   if (thisIndex > -1) matchDetails.kickOffTeam.players[thisIndex].stats.goals++
@@ -479,7 +578,23 @@ function setKickOffTeamGoalScored(matchDetails) {
 }
 
 function setSecondTeamGoalScored(matchDetails) {
-  let scorer = matchDetails.ball.lastTouch.playerName
+  const fallbackScorer = matchDetails.ball.lastTouch.playerName
+  const shotEvent = resolveShotOutcome(matchDetails, 'goal')
+  const scorer = shotEvent?.playerName ?? fallbackScorer
+  pushStructuredEvent(matchDetails, {
+    type: 'goal',
+    shotId: shotEvent?.id,
+    playerId: shotEvent?.playerId,
+    playerName: scorer,
+    teamName: shotEvent?.teamName ?? matchDetails.secondTeam.name,
+    teamId: String(shotEvent?.teamId ?? matchDetails.secondTeam.teamID),
+    xg: shotEvent?.xg,
+    phase: shotEvent?.phase,
+    pressure: shotEvent?.pressure,
+    outcome: 'goal',
+    message: `Goal Scored by - ${scorer} - (${matchDetails.secondTeam.name})`,
+    commentaryText: `Goal for ${matchDetails.secondTeam.name}!`
+  })
   matchDetails.iterationLog.push(`Goal Scored by - ${scorer} - (${matchDetails.secondTeam.name})`)
   let thisIndex = matchDetails.secondTeam.players.findIndex(thisPlayer => thisPlayer.name == scorer)
   if (thisIndex > -1) matchDetails.secondTeam.players[thisIndex].stats.goals++
@@ -497,22 +612,45 @@ function setSecondTeamGoalScored(matchDetails) {
 }
 
 function setBallSpecificGoalScoreValue(matchDetails, conceedingTeam) {
-  matchDetails.ball.position = [matchDetails.pitchSize[0] / 2, matchDetails.pitchSize[1] / 2, 0]
+  const kickoffPosition = [matchDetails.pitchSize[0] / 2, matchDetails.pitchSize[1] / 2]
+  matchDetails.ball.position = [...kickoffPosition, 0]
   matchDetails.ball.ballOverIterations = []
   matchDetails.ball.withPlayer = true
   matchDetails.ball.withTeam = conceedingTeam.teamID
   let playerWithBall = common.getRandomNumber(9, 10)
   let waitingPlayer = (playerWithBall === 9) ? 10 : 9
-  conceedingTeam.players[playerWithBall].currentPOS = matchDetails.ball.position.map(x => x)
-  conceedingTeam.players[playerWithBall].currentPOS.pop()
+  conceedingTeam.players[playerWithBall].currentPOS = kickoffPosition.map(x => x)
+  conceedingTeam.players[playerWithBall].intentPOS = kickoffPosition.map(x => x)
   conceedingTeam.players[playerWithBall].hasBall = true
   matchDetails.ball.lastTouch.playerName = conceedingTeam.players[playerWithBall].name
   matchDetails.ball.lastTouch.playerID = conceedingTeam.players[playerWithBall].playerID
   matchDetails.ball.lastTouch.teamID = conceedingTeam.teamID
   matchDetails.ball.lastTouch.deflection = false
   matchDetails.ball.Player = conceedingTeam.players[playerWithBall].playerID
-  let tempPosition = [matchDetails.ball.position[0] + 20, matchDetails.ball.position[1]]
+  let tempPosition = [kickoffPosition[0] + 20, kickoffPosition[1]]
   conceedingTeam.players[waitingPlayer].currentPOS = tempPosition.map(x => x)
+  conceedingTeam.players[waitingPlayer].intentPOS = tempPosition.map(x => x)
+}
+
+function defendingGoalieFor(matchDetails, goalLine) {
+  const [, pitchHeight] = matchDetails.pitchSize
+  const topTeam = matchDetails.kickOffTeam.players[0].originPOS[1] < pitchHeight / 2 ? matchDetails.kickOffTeam : matchDetails.secondTeam
+  const bottomTeam = topTeam.teamID === matchDetails.kickOffTeam.teamID ? matchDetails.secondTeam : matchDetails.kickOffTeam
+  return goalLine === 'top' ? topTeam.players[0] : bottomTeam.players[0]
+}
+
+function goalieParriesBehind(matchDetails, goalie) {
+  if (!goalie) return false
+  const saving = Number(goalie.skill?.saving ?? 0)
+  if (saving <= 0) return false
+  const xg = Math.max(0, Math.min(1, Number(matchDetails.ball?.lastTouch?.xg ?? matchDetails.tactical?.shotQuality?.xg ?? 0)))
+  return Math.max(0, saving - (xg * 92)) > common.getRandomNumber(0, 70)
+}
+
+function canScoreFromBoundary(matchDetails) {
+  const lastTouch = matchDetails.ball?.lastTouch ?? {}
+  if (lastTouch.action === 'penalty') return true
+  return lastTouch.action === 'shot' && lastTouch.shotOnTarget === true
 }
 
 function keepInBoundaries(matchDetails, kickteamID, ballIntended) {
@@ -529,7 +667,12 @@ function keepInBoundaries(matchDetails, kickteamID, ballIntended) {
   if (bXPOS > pitchWidth && kickteamID == KOTid) return setRightSecondTeamThrowIn(matchDetails, ballIntended)
   if (bXPOS > pitchWidth && kickteamID != KOTid) return setRightKickOffTeamThrowIn(matchDetails, ballIntended)
   if (bYPOS < 0) {
-    if (common.isBetween(bXPOS, leftPost, rightPost)) {
+    if (common.isBetween(bXPOS, leftPost, rightPost) && canScoreFromBoundary(matchDetails)) {
+      if (goalieParriesBehind(matchDetails, defendingGoalieFor(matchDetails, 'top'))) {
+        matchDetails.iterationLog.push('Ball saved behind for corner')
+        if (bXPOS < halfMWidth) return kickteamID == KOTid ? setTopLeftCornerPositions(matchDetails) : setTopRightCornerPositions(matchDetails)
+        return kickteamID == KOTid ? setTopRightCornerPositions(matchDetails) : setTopLeftCornerPositions(matchDetails)
+      }
       if (kickOffTeamSide == 'top') return setSecondTeamGoalScored(matchDetails)
       if (kickOffTeamSide == 'bottom') return setKickOffTeamGoalScored(matchDetails)
     } else {
@@ -553,7 +696,12 @@ function keepInBoundaries(matchDetails, kickteamID, ballIntended) {
   }
 
   if (bYPOS > pitchHeight) {
-    if (common.isBetween(bXPOS, leftPost, rightPost)) {
+    if (common.isBetween(bXPOS, leftPost, rightPost) && canScoreFromBoundary(matchDetails)) {
+      if (goalieParriesBehind(matchDetails, defendingGoalieFor(matchDetails, 'bottom'))) {
+        matchDetails.iterationLog.push('Ball saved behind for corner')
+        if (bXPOS < halfMWidth) return kickteamID == KOTid ? setBottomLeftCornerPositions(matchDetails) : setBottomRightCornerPositions(matchDetails)
+        return kickteamID == KOTid ? setBottomRightCornerPositions(matchDetails) : setBottomLeftCornerPositions(matchDetails)
+      }
       if (kickOffTeamSide == 'top') return setKickOffTeamGoalScored(matchDetails)
       if (kickOffTeamSide == 'bottom') return setSecondTeamGoalScored(matchDetails)
     } else {

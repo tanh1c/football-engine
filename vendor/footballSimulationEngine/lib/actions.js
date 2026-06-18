@@ -1,6 +1,29 @@
 const common = require('../lib/common')
 const setPositions = require('../lib/setPositions')
 
+function ensureEvents(matchDetails) {
+  if (!Array.isArray(matchDetails.events)) matchDetails.events = []
+  return matchDetails.events
+}
+
+function nextEventId(matchDetails, prefix) {
+  matchDetails._eventCounter = Number(matchDetails._eventCounter ?? 0) + 1
+  return `${matchDetails.matchClock?.tick ?? 0}:${prefix}:${matchDetails._eventCounter}`
+}
+
+function pushStructuredEvent(matchDetails, event) {
+  const clock = matchDetails.matchClock ?? {}
+  const structuredEvent = {
+    id: event.id ?? nextEventId(matchDetails, event.type ?? 'event'),
+    tick: event.tick ?? clock.tick ?? 0,
+    minute: event.minute ?? clock.minute ?? 0,
+    second: event.second ?? clock.second ?? 0,
+    ...event
+  }
+  ensureEvents(matchDetails).push(structuredEvent)
+  return structuredEvent
+}
+
 function recommendationMultiplier(actionName, possibleActions) {
   const recommendation = possibleActions.find(action => action.recommendationAction === actionName)
   if (!recommendation) return 1
@@ -304,6 +327,7 @@ function populatePossibleActions(possibleActions, player, matchDetails, a, b, c,
     possibleActions.forEach(action => {
       action.recommendationAction = recommendation.action
       action.recommendationScore = recommendation.score
+      if (action.name === recommendation.action) action.points = Math.max(action.points, Math.round(360 * recommendation.score))
     })
   }
   possibleActions = adjustForBallHeight(possibleActions, player, matchDetails)
@@ -358,9 +382,8 @@ function resolveTackle(player, team, opposition, matchDetails) {
   let index = opposition.players.findIndex(function(thisPlayer) {
     return thisPlayer.playerID === matchDetails.ball.Player
   })
-  let thatPlayer
-  if (index) thatPlayer = opposition.players[index]
-  else return false
+  if (index < 0) return false
+  let thatPlayer = opposition.players[index]
   player.stats.tackles.total++
   if (wasFoul(10, 18)) {
     setFoul(matchDetails, team, player, thatPlayer)
@@ -384,9 +407,8 @@ function resolveSlide(player, team, opposition, matchDetails) {
   let index = opposition.players.findIndex(function(thisPlayer) {
     return thisPlayer.playerID === matchDetails.ball.Player
   })
-  let thatPlayer
-  if (index) thatPlayer = opposition.players[index]
-  else return false
+  if (index < 0) return false
+  let thatPlayer = opposition.players[index]
   player.stats.tackles.total++
   if (wasFoul(11, 20)) {
     setFoul(matchDetails, team, player, thatPlayer)
@@ -424,6 +446,7 @@ function calcRetentionScore(skill, diff) {
 }
 
 function setPostTackleBall(matchDetails, team, opposition, player) {
+  common.removeBallFromAllPlayers(matchDetails)
   player.hasBall = true
   matchDetails.ball.lastTouch.playerName = player.name
   matchDetails.ball.lastTouch.playerID = player.playerID
@@ -466,6 +489,17 @@ function setInjury(matchDetails, thatPlayer, player, tackledInjury, tacklerInjur
 
 function setFoul(matchDetails, team, player, thatPlayer) {
   matchDetails.iterationLog.push(`Foul against: ${thatPlayer.name}`)
+  pushStructuredEvent(matchDetails, {
+    type: 'foul',
+    playerId: String(player.playerID),
+    playerName: player.name,
+    teamId: String(team.teamID),
+    teamName: team.name,
+    targetPlayerId: String(thatPlayer.playerID),
+    targetPlayerName: thatPlayer.name,
+    message: `Foul against: ${thatPlayer.name}`,
+    commentaryText: `${player.name} fouls ${thatPlayer.name}.`
+  })
   player.stats.tackles.fouls++
   if (team.teamID === matchDetails.kickOffTeam.teamID) matchDetails.kickOffTeamStatistics.fouls++
   else matchDetails.secondTeamStatistics.fouls++
@@ -473,8 +507,7 @@ function setFoul(matchDetails, team, player, thatPlayer) {
 
 function wasFoul(x, y) {
   let foul = common.getRandomNumber(0, x)
-  if (common.isBetween(foul, 0, (y / 2) - 1)) return true
-  return false
+  return foul >= 0 && foul < y
 }
 
 function foulIntensity() {

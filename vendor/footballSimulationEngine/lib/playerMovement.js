@@ -5,6 +5,59 @@ const setPositions = require(`../lib/setPositions`)
 const actions = require(`../lib/actions`)
 const { applyMovementIntents } = require(`../../../src/match-engine/tactical/applyMovementIntents`)
 
+function ensureEvents(matchDetails) {
+  if (!Array.isArray(matchDetails.events)) matchDetails.events = []
+  return matchDetails.events
+}
+
+function nextEventId(matchDetails, prefix) {
+  matchDetails._eventCounter = Number(matchDetails._eventCounter ?? 0) + 1
+  return `${matchDetails.matchClock?.tick ?? 0}:${prefix}:${matchDetails._eventCounter}`
+}
+
+function pushStructuredEvent(matchDetails, event) {
+  const clock = matchDetails.matchClock ?? {}
+  const structuredEvent = {
+    id: event.id ?? nextEventId(matchDetails, event.type ?? 'event'),
+    tick: event.tick ?? clock.tick ?? 0,
+    minute: event.minute ?? clock.minute ?? 0,
+    second: event.second ?? clock.second ?? 0,
+    ...event
+  }
+  ensureEvents(matchDetails).push(structuredEvent)
+  return structuredEvent
+}
+
+function positionEvent(position) {
+  return { x: Number(position[0]), y: Number(position[1]) }
+}
+
+function carryDistance(startPOS, endPOS) {
+  const dx = Number(endPOS[0]) - Number(startPOS[0])
+  const dy = Number(endPOS[1]) - Number(startPOS[1])
+  return Math.sqrt((dx * dx) + (dy * dy))
+}
+
+function shouldEmitDribble(action, startPOS, endPOS) {
+  const distance = carryDistance(startPOS, endPOS)
+  return distance >= 18 || (action === 'sprint' && distance >= 12)
+}
+
+function updateCarry(matchDetails, player, action, startPOS, endPOS) {
+  if (!matchDetails._carryEvents) matchDetails._carryEvents = new Map()
+  const playerId = String(player.playerID)
+  const previous = matchDetails._carryEvents.get(playerId)
+  const start = previous?.start ?? startPOS
+  const distance = (previous?.distance ?? 0) + carryDistance(startPOS, endPOS)
+  const carry = { start, distance, action }
+  matchDetails._carryEvents.set(playerId, carry)
+  return carry
+}
+
+function clearCarry(matchDetails, player) {
+  if (matchDetails._carryEvents) matchDetails._carryEvents.delete(String(player.playerID))
+}
+
 function decideMovement(closestPlayer, team, opp, matchDetails) {
   const allActions = [`shoot`, `throughBall`, `pass`, `cross`, `tackle`, `intercept`, `slide`]
   Array.prototype.push.apply(allActions, [`run`, `sprint`, `cleared`, `boot`, `penalty`])
@@ -43,19 +96,41 @@ function movePlayers(moves, team, opp, matchDetails) {
     let thisPlayer = thisPlayerMove.player
     let { move } = thisPlayerMove
     let { action } = thisPlayerMove
+    const startPOS = Array.isArray(thisPlayer.currentPOS) ? thisPlayer.currentPOS.map(value => value) : thisPlayer.currentPOS
     thisPlayer.currentPOS = completeMovement(matchDetails, thisPlayer.currentPOS, move)
-    let xPosition = common.isBetween(thisPlayer.currentPOS[0], position[0] - 3, position[0] + 3)
-    let yPosition = common.isBetween(thisPlayer.currentPOS[1], position[1] - 3, position[1] + 3)
+    if ((action === 'run' || action === 'sprint') && thisPlayer.hasBall && Array.isArray(startPOS)) {
+      const carry = updateCarry(matchDetails, thisPlayer, action, startPOS, thisPlayer.currentPOS)
+      if (shouldEmitDribble(carry.action, carry.start, thisPlayer.currentPOS)) {
+        pushStructuredEvent(matchDetails, {
+          type: 'dribble',
+          playerId: String(thisPlayer.playerID),
+          playerName: thisPlayer.name,
+          teamId: String(team.teamID),
+          teamName: team.name,
+          start: positionEvent(carry.start),
+          end: positionEvent(thisPlayer.currentPOS),
+          outcome: action === 'sprint' ? 'sprint' : 'carry',
+          message: `${thisPlayer.name} carries the ball.`,
+          commentaryText: `${thisPlayer.name} carries the ball forward.`
+        })
+        clearCarry(matchDetails, thisPlayer)
+      }
+    } else {
+      clearCarry(matchDetails, thisPlayer)
+    }
+    let xPosition = common.isBetween(thisPlayer.currentPOS[0], position[0] - 4, position[0] + 4)
+    let yPosition = common.isBetween(thisPlayer.currentPOS[1], position[1] - 4, position[1] + 4)
     let samePositionAsBall = thisPlayer.currentPOS[0] === position[0] && thisPlayer.currentPOS[1] === position[1]
     let closeWithPlayer = !!((xPosition && yPosition && withPlayer == false))
     if (xPosition && yPosition && withTeam !== team.teamID) {
       if (samePositionAsBall) {
         if (withPlayer === true && thisPlayer.hasBall === false && withTeam !== team.teamID) {
-          if (action === `tackle`) matchDetails = completeTackleWhenCloseNoBall(matchDetails, thisPlayer, team, opp)
-          if (action === `slide`) matchDetails = completeSlide(matchDetails, thisPlayer, team, opp)
+          if (action === `tackle`) matchDetails = completeTackleWhenCloseNoBall(matchDetails, thisPlayer, team, opp) ?? matchDetails
+          if (action === `slide`) matchDetails = completeSlide(matchDetails, thisPlayer, team, opp) ?? matchDetails
         } else setClosePlayerTakesBall(matchDetails, thisPlayer, team, opp)
       } else if (withPlayer === true && thisPlayer.hasBall === false && withTeam !== team.teamID) {
-        if (action === `slide`) matchDetails = completeSlide(matchDetails, thisPlayer, team, opp)
+        if (action === `tackle`) matchDetails = completeTackleWhenCloseNoBall(matchDetails, thisPlayer, team, opp) ?? matchDetails
+        if (action === `slide`) matchDetails = completeSlide(matchDetails, thisPlayer, team, opp) ?? matchDetails
       } else {
         setClosePlayerTakesBall(matchDetails, thisPlayer, team, opp)
       }
@@ -82,6 +157,7 @@ function setClosePlayerTakesBall(matchDetails, thisPlayer, team, opp) {
     if (team.name == matchDetails.kickOffTeam.name) setPositions.setSetpieceKickOffTeam(matchDetails)
     else setPositions.setSetpieceSecondTeam(matchDetails)
   } else {
+    common.removeBallFromAllPlayers(matchDetails)
     thisPlayer.hasBall = true
     matchDetails.ball.lastTouch.playerName = thisPlayer.name
     matchDetails.ball.lastTouch.playerID = thisPlayer.playerID
@@ -207,7 +283,20 @@ function handleBallPlayerActions(matchDetails, thisPlayer, team, opp, action) {
   if (ballActions.includes(action)) {
     ballMoved(matchDetails, thisPlayer, team, opp)
     if (action === `cleared` || action === `boot`) {
+      const startPOS = matchDetails.ball.position.map(value => value)
       let newPosition = ballMovement.ballKicked(matchDetails, team, thisPlayer)
+      pushStructuredEvent(matchDetails, {
+        type: 'clearance',
+        playerId: String(thisPlayer.playerID),
+        playerName: thisPlayer.name,
+        teamId: String(team.teamID),
+        teamName: team.name,
+        start: positionEvent(startPOS),
+        end: positionEvent(newPosition),
+        outcome: action === 'boot' ? 'booted' : 'cleared',
+        message: `ball cleared by: ${thisPlayer.name}`,
+        commentaryText: `${thisPlayer.name} clears the danger.`
+      })
       updateInformation(matchDetails, newPosition)
     } else if (action === `pass`) {
       let newPosition = ballMovement.ballPassed(matchDetails, team, thisPlayer)

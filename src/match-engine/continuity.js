@@ -22,11 +22,17 @@ function hasLargePlayerJump(previous, frame) {
 }
 
 function isResetEvent(frame) {
-  return (frame.events ?? []).some(event => event.type === 'set_piece' || /kick off|second half/i.test(event.message ?? ''))
+  return (frame.events ?? []).some(event => event.type === 'set_piece' || event.type === 'goal' || /kick off|second half/i.test(event.message ?? ''))
 }
 
 function discontinuityFor(previous, frame) {
-  if (previous && isResetEvent(frame) && hasLargePlayerJump(previous, frame)) {
+  if (!previous) return undefined
+  const previousHalf = Number(previous.half)
+  const currentHalf = Number(frame.half)
+  if (Number.isFinite(previousHalf) && Number.isFinite(currentHalf) && currentHalf !== previousHalf) {
+    return { type: 'half_time_reset', interpolate: false }
+  }
+  if (isResetEvent(frame) && hasLargePlayerJump(previous, frame)) {
     return { type: 'set_piece_reset', interpolate: false }
   }
   return undefined

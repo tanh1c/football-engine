@@ -1,9 +1,11 @@
+import { eventsUpToTick, latestEventMessages } from './events.js'
 import { framePairAtPlayhead, interpolateFrame, playbackSpeedLabel, playheadDelta } from './interpolate.js'
 
 export function createMatchViewer(canvas, options = {}) {
   const context = canvas.getContext('2d')
   const state = {
     frames: [],
+    events: [],
     frameIndex: 0,
     playhead: 0,
     playing: false,
@@ -13,11 +15,16 @@ export function createMatchViewer(canvas, options = {}) {
     rafId: undefined
   }
 
-  function setFrames(frames) {
+  function setFrames(frames, events = []) {
     state.frames = frames ?? []
+    state.events = events ?? []
     state.frameIndex = 0
     state.playhead = 0
     draw()
+  }
+
+  function setMatchData(data) {
+    setFrames(data?.frames, data?.events)
   }
 
   function resize() {
@@ -124,12 +131,13 @@ export function createMatchViewer(canvas, options = {}) {
     context.font = '14px system-ui, sans-serif'
     context.textAlign = 'left'
     const displaySecond = Math.floor(frame.second)
+    const elapsedEvents = eventsUpToTick(state.events, frame.tick)
     context.fillText(`Tick ${Math.floor(frame.tick)} • ${String(frame.minute).padStart(2, '0')}:${String(displaySecond).padStart(2, '0')}`, 28, 42)
-    context.fillText(`Events: ${frame.events.length} • Speed ${playbackSpeedLabel(state.speed)}`, 28, 66)
+    context.fillText(`Events: ${elapsedEvents.length}/${state.events.length} • Speed ${playbackSpeedLabel(state.speed)}`, 28, 66)
   }
 
   function drawCommentary(frame) {
-    const messages = frame.events.slice(-4).map(event => event.message)
+    const messages = latestEventMessages(state.events, frame.tick)
     const x = canvas.clientWidth - 340
     const y = 16
     context.fillStyle = 'rgba(0,0,0,0.65)'
@@ -201,5 +209,5 @@ export function createMatchViewer(canvas, options = {}) {
   window.addEventListener('resize', resize)
   resize()
 
-  return { draw, next, pause, play, previous, resize, setFrames, setSpeed, state }
+  return { draw, next, pause, play, previous, resize, setFrames, setMatchData, setSpeed, state }
 }

@@ -21,9 +21,12 @@ function applyMovementIntents(matchDetails, tactical = {}) {
   for (const movementIntent of tactical.movementIntents ?? []) {
     const player = players.get(String(movementIntent.playerId))
     if (!player) continue
+    const x = Number(movementIntent.x)
+    const y = Number(movementIntent.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue
     player.intentPOS = [
-      clamp(Number(movementIntent.x), 0, pitchWidth),
-      clamp(Number(movementIntent.y), 0, pitchHeight)
+      clamp(x, 0, pitchWidth),
+      clamp(y, 0, pitchHeight)
     ]
   }
 

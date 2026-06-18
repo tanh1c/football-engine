@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "simulate": "node scripts/simulate-demo.js",
+    "simulate:batch": "node scripts/simulate-batch.js",
     "test": "node --test"
   },
   "keywords": [

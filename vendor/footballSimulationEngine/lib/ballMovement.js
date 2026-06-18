@@ -2,6 +2,178 @@ const common = require(`../lib/common`)
 const setPositions = require(`../lib/setPositions`)
 const actions = require(`../lib/actions`)
 
+function ensureEvents(matchDetails) {
+  if (!Array.isArray(matchDetails.events)) matchDetails.events = []
+  return matchDetails.events
+}
+
+function nextEventId(matchDetails, prefix) {
+  matchDetails._eventCounter = Number(matchDetails._eventCounter ?? 0) + 1
+  return `${matchDetails.matchClock?.tick ?? 0}:${prefix}:${matchDetails._eventCounter}`
+}
+
+function pushStructuredEvent(matchDetails, event) {
+  const events = ensureEvents(matchDetails)
+  const clock = matchDetails.matchClock ?? {}
+  const structuredEvent = {
+    id: event.id ?? nextEventId(matchDetails, event.type ?? 'event'),
+    tick: event.tick ?? clock.tick ?? 0,
+    minute: event.minute ?? clock.minute ?? 0,
+    second: event.second ?? clock.second ?? 0,
+    ...event
+  }
+  events.push(structuredEvent)
+  return structuredEvent
+}
+
+function shotXg(matchDetails) {
+  return Math.max(0, Math.min(1, Number(matchDetails.ball?.lastTouch?.xg ?? matchDetails.tactical?.shotQuality?.xg ?? 0)))
+}
+
+function currentShotEvent(matchDetails) {
+  const lastTouch = matchDetails.ball?.lastTouch ?? {}
+  if (lastTouch.action !== 'shot' && lastTouch.action !== 'penalty') return undefined
+  if (!lastTouch.shotEventId) return undefined
+
+  return (matchDetails.events ?? []).find(event => (
+    event.type === 'shot' &&
+    event.id === lastTouch.shotEventId &&
+    event.outcome === 'pending'
+  ))
+}
+
+function resolveShotOutcome(matchDetails, outcome, details = {}) {
+  const shot = currentShotEvent(matchDetails)
+  if (!shot) return undefined
+
+  Object.assign(shot, { outcome, ...details })
+  if (matchDetails.ball?.lastTouch) delete matchDetails.ball.lastTouch.shotEventId
+  return shot
+}
+
+function pushSaveEvent(matchDetails, goalie, team) {
+  const shot = currentShotEvent(matchDetails)
+  if (!shot) return undefined
+  if (String(shot.teamId) === String(team.teamID)) return undefined
+  if (String(shot.playerId) === String(goalie.playerID)) return undefined
+
+  resolveShotOutcome(matchDetails, 'saved', {
+    savedByPlayerId: String(goalie.playerID),
+    savedByPlayerName: goalie.name,
+    savedByTeamId: String(team.teamID),
+    savedByTeamName: team.name
+  })
+
+  return pushStructuredEvent(matchDetails, {
+    type: 'save',
+    shotId: shot.id,
+    playerId: String(goalie.playerID),
+    playerName: goalie.name,
+    teamId: String(team.teamID),
+    teamName: team.name,
+    shotPlayerId: shot.playerId,
+    shotPlayerName: shot.playerName,
+    shotTeamId: shot.teamId,
+    shotTeamName: shot.teamName,
+    xg: shot.xg,
+    phase: shot.phase,
+    pressure: shot.pressure,
+    outcome: 'saved',
+    message: `ball saved by ${goalie.name} possesion to ${team.name}`,
+    commentaryText: `${goalie.name} makes the save.`
+  })
+}
+
+function positionEvent(position) {
+  return { x: Number(position[0]), y: Number(position[1]) }
+}
+
+function classifyPassType(matchDetails, start, end, passType) {
+  if (passType !== 'pass') return passType
+  const [pitchWidth, pitchHeight] = matchDetails.pitchSize ?? [0, 0]
+  const distance = common.distance(start, end)
+  const horizontalDistance = Math.abs(Number(end[0]) - Number(start[0]))
+  const verticalDistance = Math.abs(Number(end[1]) - Number(start[1]))
+  if (distance > pitchHeight * 0.45) return 'long_ball'
+  if (horizontalDistance > pitchWidth * 0.45 && verticalDistance < pitchHeight * 0.25) return 'switch_play'
+  return passType
+}
+
+function pushPassEvent(matchDetails, team, player, targetPlayer, start, end, passType = 'pass') {
+  const classifiedPassType = classifyPassType(matchDetails, start, end, passType)
+  const passEvent = pushStructuredEvent(matchDetails, {
+    type: classifiedPassType,
+    fromPlayerId: player.playerID,
+    fromPlayerName: player.name,
+    playerId: player.playerID,
+    playerName: player.name,
+    toPlayerId: targetPlayer?.playerID,
+    toPlayerName: targetPlayer?.name,
+    targetPlayerId: targetPlayer?.playerID,
+    targetPlayerName: targetPlayer?.name,
+    teamId: team.teamID,
+    teamName: team.name,
+    start: positionEvent(start),
+    target: targetPlayer ? positionEvent(targetPlayer.position) : undefined,
+    end: positionEvent(end),
+    outcome: 'attempted',
+    passType: classifiedPassType,
+    message: `ball passed by: ${player.name}`
+  })
+  matchDetails.ball.lastTouch.passEventId = passEvent.id
+}
+
+function updatePassOutcome(matchDetails, outcome, details = {}) {
+  const passEventId = matchDetails.ball?.lastTouch?.passEventId
+  if (!passEventId) return
+  const passEvent = (matchDetails.events ?? []).find(event => event.id === passEventId)
+  if (!passEvent || passEvent.outcome !== 'attempted') return
+  Object.assign(passEvent, { outcome }, details)
+}
+
+function pushInterceptionEvent(matchDetails, player, team, outcome) {
+  pushStructuredEvent(matchDetails, {
+    type: 'interception',
+    playerId: String(player.playerID),
+    playerName: player.name,
+    teamId: String(team.teamID),
+    teamName: team.name,
+    position: positionEvent(player.currentPOS),
+    outcome,
+    message: `${player.name} intercepts the ball`,
+    commentaryText: `${player.name} cuts it out.`
+  })
+}
+
+function pushBlockedShotEvent(matchDetails, player, team, position) {
+  const shot = resolveShotOutcome(matchDetails, 'blocked', {
+    blockedByPlayerId: String(player.playerID),
+    blockedByPlayerName: player.name,
+    blockedByTeamId: String(team.teamID),
+    blockedByTeamName: team.name
+  })
+
+  pushStructuredEvent(matchDetails, {
+    type: 'blocked_shot',
+    shotId: shot?.id,
+    playerId: String(player.playerID),
+    playerName: player.name,
+    teamId: String(team.teamID),
+    teamName: team.name,
+    shotPlayerId: shot?.playerId,
+    shotPlayerName: shot?.playerName,
+    shotTeamId: shot?.teamId,
+    shotTeamName: shot?.teamName,
+    xg: shot?.xg,
+    phase: shot?.phase,
+    pressure: shot?.pressure,
+    position: positionEvent(position),
+    outcome: 'blocked',
+    message: `${player.name} blocks the shot`,
+    commentaryText: `${player.name} blocks the shot.`
+  })
+}
+
 function moveBall(matchDetails) {
   const { ball } = matchDetails
   if (!ball.ballOverIterations || ball.ballOverIterations.length === 0) {
@@ -21,7 +193,8 @@ function moveBall(matchDetails) {
   const safeEndPos = [Number(endPos[0] || currentPos[0]), Number(endPos[1] || currentPos[1]), Number(endPos[2] || 0)]
   ball.position = safeEndPos
   matchDetails.iterationLog.push(`ball still moving from previous kick: ${safeEndPos}`)
-  // checkGoalScored(matchDetails)
+  checkGoalScored(matchDetails)
+  if (matchDetails.endIteration === true) return matchDetails
   let lastTeam = matchDetails.ball.lastTouch.teamID
   matchDetails = setPositions.keepInBoundaries(matchDetails, lastTeam.name, safeEndPos)
   return matchDetails
@@ -117,18 +290,33 @@ function newKickedPosition(pos, lowX, highX, lowY, highY) {
 
 function shotMade(matchDetails, team, player) {
   const [pitchWidth, pitchHeight] = matchDetails.pitchSize
+  const xg = shotXg(matchDetails)
+  const shotEvent = pushStructuredEvent(matchDetails, {
+    type: 'shot',
+    playerId: String(player.playerID),
+    playerName: player.name,
+    teamId: String(team.teamID),
+    teamName: team.name,
+    xg,
+    outcome: 'pending',
+    message: `Shot Made by: ${player.name}`,
+    commentaryText: `${player.name} shoots.`
+  })
+  matchDetails.lastShotEventId = shotEvent.id
   matchDetails.iterationLog.push(`Shot Made by: ${player.name}`)
   matchDetails.ball.lastTouch.playerName = player.name
   matchDetails.ball.lastTouch.playerID = player.playerID
   matchDetails.ball.lastTouch.teamID = team.teamID
   matchDetails.ball.lastTouch.iterations = 0
+  matchDetails.ball.lastTouch.action = 'shot'
+  matchDetails.ball.lastTouch.shotEventId = shotEvent.id
+  matchDetails.ball.lastTouch.xg = xg
   let shotPosition = [0, 0]
   let shotPower = common.calculatePower(player.skill.strength, pitchHeight)
   let PlyPos = player.currentPOS
-  let thisTeamStats
-  if (common.isEven(matchDetails.half)) thisTeamStats = matchDetails.kickOffTeamStatistics
-  else if (common.isOdd(matchDetails.half)) thisTeamStats = matchDetails.secondTeamStatistics
-  else throw new Error(`You cannot supply 0 as a half`)
+  const thisTeamStats = String(team.teamID) === String(matchDetails.kickOffTeam.teamID)
+    ? matchDetails.kickOffTeamStatistics
+    : matchDetails.secondTeamStatistics
   thisTeamStats.shots.total++
   player.stats.shots.total++
   const calcHeight = parseInt(player.height, 10) + parseInt((player.skill.jumping || 0), 10)
@@ -149,10 +337,17 @@ function shotMade(matchDetails, team, player) {
   } else {
     shotReachGoal = !(((PlyPos[1] + shotPower) < pitchHeight))
   }
-  let shootingRoll = common.getRandomNumber(0, 40)
-  if (isVolley) shootingRoll += 5
-  if (isHeader) shootingRoll += 3
+  const distanceToGoal = player.originPOS[1] > pitchHeight / 2 ? PlyPos[1] : pitchHeight - PlyPos[1]
+  const normalizedDistanceToGoal = distanceToGoal / (pitchHeight / 100)
+  const tacticalXg = Number(matchDetails.tactical?.shotQuality?.xg ?? 0)
+  let shootingRoll = common.getRandomNumber(0, 100) + Math.max(0, normalizedDistanceToGoal - 18) * 2.2
+  if (normalizedDistanceToGoal <= 22) shootingRoll -= 12
+  if (tacticalXg >= 0.4) shootingRoll -= tacticalXg * 12
+  else if (normalizedDistanceToGoal > 22) shootingRoll += (0.4 - tacticalXg) * 90
+  if (isVolley) shootingRoll += 10
+  if (isHeader) shootingRoll += 6
   if (shotReachGoal && player.skill.shooting > shootingRoll) {
+    matchDetails.ball.lastTouch.shotOnTarget = true
     thisTeamStats.shots.on++
     player.stats.shots.on++
     shotPosition[0] = common.getRandomNumber((pitchWidth / 2) - 50, (pitchWidth / 2) + 50)
@@ -160,6 +355,7 @@ function shotMade(matchDetails, team, player) {
     if (player.originPOS[1] > pitchHeight / 2) shotPosition[1] = -1
     else shotPosition[1] = pitchHeight + 1
   } else {
+    matchDetails.ball.lastTouch.shotOnTarget = false
     thisTeamStats.shots.off++
     player.stats.shots.off++
     let left = (common.getRandomNumber(0, 10) > 5)
@@ -184,24 +380,26 @@ function penaltyTaken(matchDetails, team, player) {
   matchDetails.ball.lastTouch.playerID = player.playerID
   matchDetails.ball.lastTouch.teamID = team.teamID
   matchDetails.ball.lastTouch.iterations = 0
+  matchDetails.ball.lastTouch.action = 'penalty'
   const calcHeight = parseInt(player.height, 10) + parseInt((player.skill.jumping || 0), 10)
   const bodyPart = setAttackBodyPart(matchDetails.ball.position, calcHeight)
   matchDetails.ball.lastTouch.bodyPart = bodyPart
   let shotPosition = [0, 0]
   let shotPower = common.calculatePower(player.skill.strength, pitchHeight)
   let PlyPos = player.currentPOS
-  let thisTeamStats
-  if (common.isEven(matchDetails.half)) thisTeamStats = matchDetails.kickOffTeamStatistics
-  else if (common.isOdd(matchDetails.half)) thisTeamStats = matchDetails.secondTeamStatistics
-  else throw new Error(`You cannot supply 0 as a half`)
+  const thisTeamStats = String(team.teamID) === String(matchDetails.kickOffTeam.teamID)
+    ? matchDetails.kickOffTeamStatistics
+    : matchDetails.secondTeamStatistics
   thisTeamStats.shots.total++
   player.stats.shots.total++
   if (player.skill.penalty_taking > common.getRandomNumber(0, 100)) {
+    matchDetails.ball.lastTouch.shotOnTarget = true
     thisTeamStats.shots.on++
     player.stats.shots.on++
     shotPosition[0] = common.getRandomNumber((pitchWidth / 2) - 50, (pitchWidth / 2) + 50)
     matchDetails.iterationLog.push(`Shot On Target at X Position ${shotPosition[0]}`)
   } else {
+    matchDetails.ball.lastTouch.shotOnTarget = false
     thisTeamStats.shots.off++
     player.stats.shots.off++
     let left = (common.getRandomNumber(0, 10) > 5)
@@ -229,20 +427,26 @@ function checkGoalScored(matchDetails) {
   const goalX = common.isBetween(ball.position[0], centreGoal - goalEdge, centreGoal + goalEdge)
   let KOGoalie = kickOffTeam.players[0]
   let STGoalie = secondTeam.players[0]
-  let ballProx = 8
+  const keeperReachX = Math.max(8, goalWidth)
+  const keeperReachY = Math.max(8, goalEdge + 1)
   let [ballX, ballY] = ball.position
-  let nearKOGoalieX = common.isBetween(ballX, KOGoalie.currentPOS[0] - ballProx, KOGoalie.currentPOS[0] + ballProx)
-  let nearKOGoalieY = common.isBetween(ballY, KOGoalie.currentPOS[1] - ballProx, KOGoalie.currentPOS[1] + ballProx)
-  let nearSTGoalieX = common.isBetween(ballX, STGoalie.currentPOS[0] - ballProx, STGoalie.currentPOS[0] + ballProx)
-  let nearSTGoalieY = common.isBetween(ballY, STGoalie.currentPOS[1] - ballProx, STGoalie.currentPOS[1] + ballProx)
+  const koGoaliePos = ballY < 1 ? KOGoalie.originPOS : KOGoalie.currentPOS
+  const stGoaliePos = ballY >= pitchHeight ? STGoalie.originPOS : STGoalie.currentPOS
+  let nearKOGoalieX = common.isBetween(ballX, koGoaliePos[0] - keeperReachX, koGoaliePos[0] + keeperReachX)
+  let nearKOGoalieY = common.isBetween(ballY, koGoaliePos[1] - keeperReachY, koGoaliePos[1] + keeperReachY)
+  let nearSTGoalieX = common.isBetween(ballX, stGoaliePos[0] - keeperReachX, stGoaliePos[0] + keeperReachX)
+  let nearSTGoalieY = common.isBetween(ballY, stGoaliePos[1] - keeperReachY, stGoaliePos[1] + keeperReachY)
   let KOrHeight = KOGoalie.height + KOGoalie.skill.jumping
   let STrHeight = STGoalie.height + STGoalie.skill.jumping
-  let KTGSaving = KOGoalie.skill.saving
-  let STGSaving = STGoalie.skill.saving
+  const shotAction = ball.lastTouch?.action === 'shot' || ball.lastTouch?.action === 'penalty'
+  const tacticalXg = shotAction ? shotXg(matchDetails) : 0
+  let KTGSaving = Math.max(0, KOGoalie.skill.saving - (tacticalXg * 100))
+  let STGSaving = Math.max(0, STGoalie.skill.saving - (tacticalXg * 100))
   if (nearKOGoalieX && nearKOGoalieY && ballZ < KOrHeight && KTGSaving > common.getRandomNumber(0, 100)) {
     matchDetails = setPositions.setGoalieHasBall(matchDetails, KOGoalie)
     if (common.inTopPenalty(matchDetails, ball.position) || common.inBottomPenalty(matchDetails, ball.position)) {
       matchDetails.iterationLog.push(`ball saved by ${KOGoalie.name} possesion to ${kickOffTeam.name}`)
+      pushSaveEvent(matchDetails, KOGoalie, kickOffTeam)
       KOGoalie.stats.saves++
     }
     matchDetails.endIteration = true
@@ -250,10 +454,11 @@ function checkGoalScored(matchDetails) {
     matchDetails = setPositions.setGoalieHasBall(matchDetails, STGoalie)
     if (common.inTopPenalty(matchDetails, ball.position) || common.inBottomPenalty(matchDetails, ball.position)) {
       matchDetails.iterationLog.push(`ball saved by ${STGoalie.name} possesion to ${secondTeam.name}`)
+      pushSaveEvent(matchDetails, STGoalie, secondTeam)
       STGoalie.stats.saves++
     }
     matchDetails.endIteration = true
-  } else if (goalX) {
+  } else if (goalX && (ball.lastTouch?.action === 'penalty' || (ball.lastTouch?.action === 'shot' && ball.lastTouch?.shotOnTarget === true))) {
     if (ball.position[1] < 1) {
       if (half == 0) throw new Error('cannot set half as 0')
       else if (common.isOdd(half)) matchDetails = setPositions.setSecondTeamGoalScored(matchDetails)
@@ -274,6 +479,7 @@ function throughBall(matchDetails, team, player) {
   matchDetails.ball.lastTouch.playerID = player.playerID
   matchDetails.ball.lastTouch.teamID = team.teamID
   matchDetails.ball.lastTouch.iterations = 0
+  matchDetails.ball.lastTouch.action = 'throughBall'
   matchDetails.iterationLog.push(`through ball attempted by: ${player.name}`)
   player.stats.passes.total++
   const power = common.calculatePower(player.skill.strength, pitchHeight)
@@ -305,6 +511,7 @@ function throughBall(matchDetails, team, player) {
     common.round(finalTarget[0] + common.getRandomNumber(-spread, spread), 0),
     common.round(finalTarget[1] + common.getRandomNumber(-spread, spread), 0)
   ]
+  pushPassEvent(matchDetails, team, player, targetPlayer, ballPos, finalTarget, 'through_ball')
   matchDetails.ball.lastTouch.bodyPart = setAttackBodyPart([0, 0, 0], 100)
   return calcBallMovementOverTime(matchDetails, power, finalTarget, player, 'through')
 }
@@ -332,6 +539,7 @@ function getPlayersInDistance(team, player, pitchSize) {
         let playerToPlayerY = player.currentPOS[1] - teamPlayer.currentPOS[1]
         let proximityToBall = Math.abs(playerToPlayerX + playerToPlayerY)
         playersInDistance.push({
+          'playerID': teamPlayer.playerID,
           'position': teamPlayer.currentPOS,
           'proximity': proximityToBall,
           'name': teamPlayer.name
@@ -401,7 +609,7 @@ function thisPlayerIsInProximity(matchDetails, thisPlayer, thisPOS, thisPos, pow
   } else if (xPosProx && yPosProx && zPosProx) {
     if (matchDetails.ball.lastTouch.playerID !== thisPlayer.playerID) {
       let deflectPos = thisPlayer.currentPOS
-      let newPOS = resolveDeflection(power, thisPOS, deflectPos, thisPlayer, thisTeam.name, calcHeight, matchDetails)
+      let newPOS = resolveDeflection(power, thisPOS, deflectPos, thisPlayer, thisTeam, calcHeight, matchDetails)
       return [common.round(newPOS[0], 2), common.round(newPOS[1], 2)]
     }
   }
@@ -427,6 +635,7 @@ function resolveDeflection(power, thisPOS, defPosition, defPlayer, defTeam, calc
     }
     newPower = common.round((newPower / 3), 0)
   }
+  if (matchDetails.ball.lastTouch?.action === 'shot') pushBlockedShotEvent(matchDetails, defPlayer, defTeam, defPosition)
   let bodyPart = setDeflectBodyPart(thisPOS, calcHeight)
   matchDetails.ball.lastTouch.bodyPart = bodyPart
   matchDetails.ball.lastTouch.deflection = true
@@ -437,7 +646,7 @@ function resolveDeflection(power, thisPOS, defPosition, defPlayer, defTeam, calc
   matchDetails.ball.withTeam = ''
   tempPosition = setDeflectionDirectionPos(direction, defPosition, newPower)
   let lastTeam = matchDetails.ball.lastTouch.teamID
-  matchDetails = setPositions.keepInBoundaries(matchDetails, lastTeam.name, tempPosition)
+  matchDetails = setPositions.keepInBoundaries(matchDetails, lastTeam, tempPosition)
   let intended = matchDetails.ballIntended
   let lastPOS = (intended) ? intended.map(x => x) : matchDetails.ball.position.map(x => x)
   delete matchDetails.ballIntended
@@ -446,12 +655,21 @@ function resolveDeflection(power, thisPOS, defPosition, defPlayer, defTeam, calc
 }
 
 function setBallMovementMatchDetails(matchDetails, thisPlayer, thisPos, thisTeam) {
+  const previousPassEventId = matchDetails.ball?.lastTouch?.passEventId
+  if (String(matchDetails.ball?.lastTouch?.teamID) === String(thisTeam.teamID)) {
+    updatePassOutcome(matchDetails, 'completed', {
+      receiverPlayerId: String(thisPlayer.playerID),
+      receiverPlayerName: thisPlayer.name
+    })
+  }
+  common.removeBallFromAllPlayers(matchDetails)
   matchDetails.ball.ballOverIterations = []
   matchDetails.ball.Player = thisPlayer.playerID
   matchDetails.ball.withPlayer = true
   matchDetails.ball.lastTouch.playerName = thisPlayer.name
   matchDetails.ball.lastTouch.playerID = thisPlayer.playerID
   matchDetails.ball.lastTouch.teamID = thisTeam.teamID
+  matchDetails.ball.lastTouch.passEventId = previousPassEventId
   matchDetails.ball.withTeam = thisTeam.teamID
   let tempArray = thisPos
   matchDetails.ball.position = tempArray.map(x => x)
@@ -507,11 +725,21 @@ function setDeflectionDirectionPos(direction, defPosition, newPower) {
 }
 
 function setDeflectionPlayerHasBall(ballHeight, matchDetails, defPlayer, defTeam) {
+  const previousPassEventId = matchDetails.ball?.lastTouch?.passEventId
   matchDetails.iterationLog.push(`${defPlayer.name} has the ball`)
+  updatePassOutcome(matchDetails, 'intercepted', {
+    interceptorPlayerId: String(defPlayer.playerID),
+    interceptorPlayerName: defPlayer.name,
+    interceptorTeamId: String(defTeam.teamID),
+    interceptorTeamName: defTeam.name
+  })
+  pushInterceptionEvent(matchDetails, defPlayer, defTeam, 'controlled')
+  common.removeBallFromAllPlayers(matchDetails)
   defPlayer.hasBall = true
   matchDetails.ball.lastTouch.playerName = defPlayer.name
   matchDetails.ball.lastTouch.playerID = defPlayer.playerID
   matchDetails.ball.lastTouch.teamID = defTeam.teamID
+  matchDetails.ball.lastTouch.passEventId = previousPassEventId
   matchDetails.ball.lastTouch.deflection = false
   if (defPlayer.offside == true) {
     setDeflectionPlayerOffside(matchDetails, defTeam, defPlayer)
@@ -564,6 +792,7 @@ function ballPassed(matchDetails, team, player) {
   matchDetails.ball.lastTouch.playerID = player.playerID
   matchDetails.ball.lastTouch.teamID = team.teamID
   matchDetails.ball.lastTouch.iterations = 0
+  matchDetails.ball.lastTouch.action = 'pass'
   matchDetails.iterationLog.push(`ball passed by: ${player.name}`)
   player.stats.passes.total++
 
@@ -588,7 +817,10 @@ function ballPassed(matchDetails, team, player) {
   const aTop = player.originPOS[1] > (pitchHeight / 2)
 
   reachable.sort((a, b) => passScoreOption(b, aTop, ballPos, maxDist) - passScoreOption(a, aTop, ballPos, maxDist))
-  const targetPlayer = reachable[0]
+  const tacticalTarget = player.actionTargetPlayerId
+    ? teammates.find(candidate => String(candidate.playerID) === String(player.actionTargetPlayerId))
+    : undefined
+  const targetPlayer = tacticalTarget ?? reachable[0]
   matchDetails.iterationLog.push(`Target selected: ${targetPlayer.name}`)
 
   const accuracyFactor = (100 - player.skill.passing) / 100
@@ -597,6 +829,7 @@ function ballPassed(matchDetails, team, player) {
   const targetX = targetPlayer.position[0] + common.getRandomNumber(-spread, spread)
   const targetY = targetPlayer.position[1] + common.getRandomNumber(-spread, spread)
   const finalTarget = [common.round(targetX, 0), common.round(targetY, 0)]
+  pushPassEvent(matchDetails, team, player, targetPlayer, ballPos, finalTarget)
   const calcHeight = parseInt(player.height, 10) + parseInt((player.skill.jumping || 0), 10)
   const bodyPart = setAttackBodyPart(matchDetails.ball.position, calcHeight)
   matchDetails.ball.lastTouch.bodyPart = bodyPart
@@ -654,6 +887,7 @@ function ballCrossed(matchDetails, team, player) {
   matchDetails.ball.lastTouch.playerName = player.name
   matchDetails.ball.lastTouch.playerID = player.playerID
   matchDetails.ball.lastTouch.teamID = team.teamID
+  matchDetails.ball.lastTouch.action = 'cross'
 
   matchDetails.iterationLog.push(`ball crossed by: ${player.name}`)
   player.stats.passes.total++
@@ -687,6 +921,7 @@ function ballCrossed(matchDetails, team, player) {
     common.round(finalTarget[0] + common.getRandomNumber(-spread, spread), 0),
     common.round(finalTarget[1] + common.getRandomNumber(-spread, spread), 0)
   ]
+  pushPassEvent(matchDetails, team, player, undefined, ballPos, finalTarget, 'cross')
   const bodyPart = setAttackBodyPart([0, 0, 0], 100)
   matchDetails.ball.lastTouch.bodyPart = bodyPart
   let temp = calcBallMovementOverTime(matchDetails, power * 1.1, finalTarget, player, 'cross')

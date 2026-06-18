@@ -39,8 +39,14 @@ function getBallTrajectory(thisPOS, newPOS, power, type, pitchHeight) {
   const dy = newPOS[1] - thisPOS[1]
   const maxPower = pitchHeight * 0.40
   const powerRatio = Math.min(1, power / maxPower)
-  const minSteps = 50
-  const maxSteps = 100
+  const stepWindows = {
+    pass: [5, 10],
+    through: [6, 12],
+    shot: [3, 7],
+    cross: [8, 14],
+    kick: [10, 18]
+  }
+  const [minSteps, maxSteps] = stepWindows[type] ?? [5, 12]
   const steps = Math.round(minSteps + (maxSteps - minSteps) * powerRatio)
   let maxLoftPercent = 0.03
   if (type === 'pass') maxLoftPercent = 0.01

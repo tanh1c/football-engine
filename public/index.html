@@ -46,7 +46,7 @@
         const response = await fetch('../tmp/demo-match.json')
         if (response.ok) {
           const data = await response.json()
-          viewer.setFrames(data.frames)
+          viewer.setMatchData(data)
         }
       } catch (error) {
         console.warn('Run npm run simulate before opening this viewer.', error)

@@ -7,6 +7,10 @@ async function loadModule() {
   return import('../src/viewer/interpolate.js')
 }
 
+async function loadEventModule() {
+  return import('../src/viewer/events.js')
+}
+
 test('interpolateFrame blends player and ball positions', async () => {
   const { interpolateFrame } = await loadModule()
   const frame = interpolateFrame({
@@ -146,4 +150,28 @@ test('interpolateFrame cuts directly to discontinuity frames', async () => {
 
   assert.equal(frame.players[0].x, 90)
   assert.equal(frame.ball.x, 90)
+})
+
+test('eventsForFrame joins optimized frame eventIds with top-level events', async () => {
+  const { eventsForFrame } = await loadEventModule()
+  const frame = { tick: 2, eventIds: ['pass-1', 'save-1'], events: [] }
+  const events = [
+    { id: 'pass-1', type: 'pass', message: 'Pass' },
+    { id: 'shot-1', type: 'shot', message: 'Shot' },
+    { id: 'save-1', type: 'save', message: 'Save' }
+  ]
+
+  assert.deepEqual(eventsForFrame(frame, events).map(event => event.id), ['pass-1', 'save-1'])
+})
+
+test('latestEventMessages returns cumulative commentary up to the current frame tick', async () => {
+  const { eventsUpToTick, latestEventMessages } = await loadEventModule()
+  const events = [
+    { tick: 2, message: 'Kick off' },
+    { tick: 8, message: 'Shot', commentaryText: 'A One shoots.' },
+    { tick: 12, message: 'Goal' }
+  ]
+
+  assert.deepEqual(eventsUpToTick(events, 8.9).map(event => event.message), ['Kick off', 'Shot'])
+  assert.deepEqual(latestEventMessages(events, 8.9), ['Kick off', 'A One shoots.'])
 })
